@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arma3-builder"
+version = "0.1.0"
+description = "Multi-agent AI system for generating Arma 3 (Real Virtuality 4) campaigns"
+requires-python = ">=3.10"
+authors = [{ name = "arma3-builder contributors" }]
+license = { text = "MIT" }
+readme = "README.md"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "httpx>=0.27",
+    "anyio>=4.3",
+    "structlog>=24.1",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+llm = [
+    "anthropic>=0.34",
+    "openai>=1.30",
+]
+rag = [
+    "qdrant-client>=1.9",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=2.7",
+]
+arma = [
+    "armaclass>=1.3.2",
+]
+dev = [
+    "pytest>=8.1",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+arma3-builder = "arma3_builder.cli:main"
+arma3-builder-api = "arma3_builder.main:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]

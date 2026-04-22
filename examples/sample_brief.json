@@ -1,0 +1,44 @@
+{
+  "name": "Operation Silent Reaper",
+  "author": "arma3-builder",
+  "overview": "Two-mission MARSOC raid on a hostile SAM site followed by a pilot recovery deep in Tanoa.",
+  "mods": ["cba_main", "rhsusf_main"],
+  "factions": {
+    "WEST": "rhs_faction_socom",
+    "EAST": "rhs_faction_msv",
+    "INDEPENDENT": "IND_F"
+  },
+  "missions": [
+    {
+      "title": "Silent Antenna",
+      "summary": "Infiltrate the jungle, destroy the SAM antenna, exfiltrate before dawn.",
+      "map": "Tanoa",
+      "side": "WEST",
+      "enemy_side": "EAST",
+      "objectives": [
+        "Reach the SAM site",
+        "Plant explosives on the antenna",
+        "Reach the extraction LZ"
+      ],
+      "time_of_day": "02:30",
+      "weather": "overcast",
+      "player_count": 4,
+      "tags": ["night", "stealth", "demolitions"]
+    },
+    {
+      "title": "Recover Reaper One",
+      "summary": "A SOAR pilot punched out near a hostile village. Bring them back alive.",
+      "map": "Tanoa",
+      "side": "WEST",
+      "enemy_side": "EAST",
+      "objectives": [
+        "Locate the downed pilot",
+        "Defend the LZ until extract arrives"
+      ],
+      "time_of_day": "06:00",
+      "weather": "clear",
+      "player_count": 4,
+      "tags": ["recovery", "defend"]
+    }
+  ]
+}
