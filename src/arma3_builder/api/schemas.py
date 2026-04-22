@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ..protocols import CampaignBrief, CampaignPlan, QAReport
+from ..protocols import CampaignBrief, CampaignPlan, MissionBlueprint, QAReport
 
 
 class GenerateRequest(BaseModel):
@@ -30,9 +30,21 @@ class GenerateResponse(BaseModel):
     qa: QAReport
     artifact_count: int
     plan: CampaignPlan
+    score: dict[str, int] | None = None
+    launch: dict[str, Any] | None = None
+    diff: list[dict[str, Any]] | None = None
 
 
 class PreviewResponse(BaseModel):
     """Used by the visual node-graph editor (Phase 4)."""
     plan: CampaignPlan
     fsm_diagrams: list[dict[str, Any]]
+
+
+class RefineRequest(BaseModel):
+    plan: CampaignPlan
+    instruction: str
+
+
+class TemplateInstance(BaseModel):
+    blueprint: MissionBlueprint

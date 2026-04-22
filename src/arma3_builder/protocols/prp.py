@@ -160,16 +160,35 @@ class Diary(BaseModel):
     tasks: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class Dialogue(BaseModel):
+    """One radio line played during a mission."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    speaker: str = "HQ"
+    text: str
+    trigger_state: str | None = Field(
+        default=None,
+        description="If set, line is played when FSM enters this state",
+    )
+
+
 class MissionBlueprint(BaseModel):
     """Concrete mission representation produced by the Narrative Director."""
 
     model_config = ConfigDict(extra="forbid")
 
+    mission_id: str = Field(
+        description="Stable slug identifying the mission across agents (e.g. 'm01_silent_antenna')",
+        default="",
+    )
     brief: MissionBrief
     fsm: FsmGraph
     units: list[UnitPlacement] = Field(default_factory=list)
     waypoints: list[Waypoint] = Field(default_factory=list)
     diary: Diary = Field(default_factory=Diary)
+    dialogue: list[Dialogue] = Field(default_factory=list)
     addons: list[str] = Field(default_factory=list)
 
 

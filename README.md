@@ -61,9 +61,9 @@ cp .env.example .env
 # Generate a campaign from the bundled example brief (no LLM required — uses stub provider)
 python scripts/demo.py
 
-# Or run the API
+# Or run the API + web UI:
 arma3-builder-api
-# POST a brief:
+open http://localhost:8000/          # interactive designer UI
 curl -X POST http://localhost:8000/generate \
      -H 'Content-Type: application/json' \
      -d @examples/sample_campaign.json
@@ -71,6 +71,31 @@ curl -X POST http://localhost:8000/generate \
 
 The output campaign is written to `./output/<campaign_slug>/` with the directory layout
 specified by Bohemia Interactive for SP / coop campaigns.
+
+## Web UI (single-page, no build step)
+
+`http://localhost:8000/` serves a three-column UI:
+
+1. **Describe** — pick one of six mission templates (Convoy, Defend, Sabotage, CSAR,
+   HVT, Recon), type a free-form prompt, or paste a raw `CampaignBrief` JSON.
+2. **Progress** — watches the SSE stream from `/generate/stream`, shows per-agent
+   progress, QA iterations, the 5-axis quality score and a refinement box for
+   follow-ups like *"make mission 2 rainy night"*. Changes are shown as a unified
+   diff against the previous run.
+3. **FSM graph** — canvas-rendered state machine for the selected mission.
+
+## REST API
+
+| Endpoint                               | Purpose                                           |
+|----------------------------------------|---------------------------------------------------|
+| `GET  /health`                         | Liveness                                          |
+| `POST /generate`                       | Prompt or brief → campaign (with score + launch)  |
+| `POST /generate/stream`                | Same, but SSE progress stream                     |
+| `POST /preview`                        | FSM graphs only, no file writes                   |
+| `GET  /templates`                      | List built-in mission templates                   |
+| `POST /templates/{id}/instantiate`     | Instantiate a template with parameters            |
+| `POST /refine`                         | Conversational follow-up + unified diff           |
+| `GET  /`, `GET /ui/*`                  | Web UI                                            |
 
 ## Tests
 

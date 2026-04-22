@@ -9,11 +9,11 @@ from ..arma import (
 )
 from ..arma.campaign import mission_dir_name, slugify
 from ..arma.packager import pbo_prefix_file
+from ..arma.stringtable import render_stringtable
 from ..config import get_settings
 from ..protocols import (
     CampaignPlan,
     GeneratedArtifact,
-    MissionBlueprint,
 )
 from .base import Agent, AgentContext
 
@@ -30,10 +30,21 @@ class ConfigMasterAgent(Agent):
         artifacts: list[GeneratedArtifact] = []
         mission_dirs: dict[int, str] = {}
 
-        # Per-mission config files.
+        # Per-mission config files. We *also* assign `mission_id` onto the
+        # blueprint so downstream agents (Scripter, QA) use the same slug.
         for i, blueprint in enumerate(plan.blueprints):
             mdir = mission_dir_name(blueprint, i + 1)
             mission_dirs[i] = mdir
+            if not blueprint.mission_id:
+                blueprint.mission_id = f"m{i + 1:02d}_{slugify(blueprint.brief.title)}"
+
+            # Augment addons from the RAG-aware registry before building SQM.
+            resolved_addons: set[str] = set(blueprint.addons)
+            for unit in blueprint.units:
+                info = ctx.registry.items.get(unit.classname)
+                if info and info.addon:
+                    resolved_addons.add(info.addon)
+            blueprint.addons = sorted(resolved_addons)
 
             ext = generate_mission_description_ext(blueprint)
             artifacts.append(GeneratedArtifact(
@@ -63,12 +74,22 @@ class ConfigMasterAgent(Agent):
             kind="txt",
         ))
 
-        # Optional config.cpp for an addon-style packaging (CfgPatches/CfgMissions).
+        # Addon-style config.cpp for CfgPatches/CfgMissions packaging.
         artifacts.append(GeneratedArtifact(
             relative_path="config.cpp",
             content=self._build_config_cpp(plan),
             kind="cpp",
         ))
+
+        # Localisation bundle.
+        artifacts.append(GeneratedArtifact(
+            relative_path="stringtable.xml",
+            content=render_stringtable(plan, languages=["English", "Russian"]),
+            kind="txt",
+        ))
+
+        # Remember classnames the registry could not resolve so QA can flag them.
+        ctx.memory["unknown_classnames"] = ctx.registry.take_unknowns()
 
         return artifacts, mission_dirs
 
@@ -78,7 +99,7 @@ class ConfigMasterAgent(Agent):
         addons_str = ", ".join(f'"{a}"' for a in addons)
         mission_blocks = []
         for i, bp in enumerate(plan.blueprints):
-            mid = f"m{i + 1:02d}_{slugify(bp.brief.title)}"
+            mid = bp.mission_id or f"m{i + 1:02d}_{slugify(bp.brief.title)}"
             mission_blocks.append(
                 f'        class {mid} {{\n'
                 f'            directory = "campaigns\\{slug}\\missions\\{mid}.{bp.brief.map}";\n'
@@ -95,7 +116,7 @@ class ConfigMasterAgent(Agent):
             f'    }};\n'
             f'}};\n\n'
             f'class CfgMissions\n{{\n'
-            f'    class Campaigns\n{{\n'
+            f'    class Campaigns\n    {{\n'
             f'        class A3B_{slug}\n'
             f'        {{\n'
             f'            directory = "campaigns\\{slug}";\n'

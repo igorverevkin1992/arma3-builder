@@ -1,12 +1,17 @@
 """mission.sqm generation.
 
-Two paths:
-  1. If `armaclass` is installed, we serialise via its parser (typesafe round-trip).
-  2. Otherwise we fall back to an internal writer that emits the modern
-     Eden-Editor format (version 53) using the documented class hierarchy.
+Produces an Eden-Editor compatible mission.sqm (format version 53). Includes
+all mandatory top-level classes that modern 3D editor expects:
 
-The internal writer is sufficient to load in 3D Editor for the cases the agent
-pipeline produces (units + groups + waypoints + addons metadata).
+  * EditorData { Camera { … }; moveGridStep = …; }
+  * ItemIDProvider / MarkerIDProvider / LayerIndexProvider
+  * Connections
+  * Mission { Intel, Entities, Markers, Groups }
+  * AddonsMetaData (required for mod-aware loading)
+
+Two rendering paths:
+  1. If `armaclass` is installed, serialise via its parser.
+  2. Otherwise internal deterministic writer (default).
 """
 from __future__ import annotations
 
@@ -17,27 +22,73 @@ from .classnames import ClassnameRegistry
 
 SQM_VERSION = 53
 
+_SIDE_TO_RESPAWN = {
+    "WEST": "respawn_west",
+    "EAST": "respawn_east",
+    "INDEPENDENT": "respawn_guerrila",
+    "CIVILIAN": "respawn_civilian",
+}
 
-def build_sqm_dict(blueprint: MissionBlueprint, registry: ClassnameRegistry) -> dict[str, Any]:
-    """Build a structured dict that mirrors the SQM AST.
 
-    This is the format consumed both by the Armaclass writer and by the
-    internal fallback. Each top-level key matches an SQM root class.
-    """
-    addons = sorted({registry.addon_for(u.classname) for u in blueprint.units} | set(blueprint.addons))
+def build_sqm_dict(
+    blueprint: MissionBlueprint,
+    registry: ClassnameRegistry,
+    *,
+    include_respawn_markers: bool = True,
+) -> dict[str, Any]:
+    """Build a structured dict mirroring the SQM AST."""
+    addons = sorted(
+        {registry.addon_for(u.classname) for u in blueprint.units} | set(blueprint.addons)
+    )
     addons = [a for a in addons if a]
+
+    # Always include the base a3_map package and editable category.
+    if "A3_Characters_F" not in addons and any(
+        registry.items.get(u.classname) and registry.items[u.classname].type == "Man"
+        for u in blueprint.units
+    ):
+        addons.append("A3_Characters_F")
+
+    # Counters for id uniqueness across the whole mission.
+    id_counter = _IdCounter(start=100)
+
     items: list[dict[str, Any]] = []
 
+    # 1. Groups & units
     groups: dict[str, list[UnitPlacement]] = {}
     for u in blueprint.units:
         groups.setdefault(u.group_id, []).append(u)
 
-    item_id = 0
     for group_id, units in groups.items():
         side = units[0].side
         wps = [w for w in blueprint.waypoints if w.group_id == group_id]
-        items.append(_group_node(item_id, side, units, wps))
-        item_id += 1
+        items.append(_group_node(id_counter, side, units, wps))
+
+    # 2. Respawn markers (required for respawn="BASE")
+    markers: list[dict[str, Any]] = []
+    if include_respawn_markers:
+        sides_needing = {u.side for u in blueprint.units if u.is_player}
+        for side in sides_needing:
+            marker_name = _SIDE_TO_RESPAWN.get(side)
+            if not marker_name:
+                continue
+            # Place marker 20 m away from the first player so it's not under them.
+            base_pos = next(
+                (u.position for u in blueprint.units if u.is_player and u.side == side),
+                (0.0, 0.0, 0.0),
+            )
+            markers.append({
+                "dataType": "Marker",
+                "id": id_counter.next(),
+                "position": [base_pos[0] + 20.0, base_pos[1] + 20.0, 0.0],
+                "name": marker_name,
+                "markerType": "ELLIPSE",
+                "type": "Empty",
+                "a": 5.0,
+                "b": 5.0,
+                "drawBorder": 1,
+                "colorName": "ColorBlue" if side == "WEST" else "ColorRed",
+            })
 
     return {
         "version": SQM_VERSION,
@@ -47,69 +98,122 @@ def build_sqm_dict(blueprint: MissionBlueprint, registry: ClassnameRegistry) -> 
             "scaleGridStep": 1.0,
             "autoGroupingDist": 10.0,
             "toggles": 1,
+            "Camera": {
+                "pos": [
+                    (blueprint.units[0].position[0] if blueprint.units else 0.0) - 50.0,
+                    (blueprint.units[0].position[2] if blueprint.units else 0.0) + 40.0,
+                    (blueprint.units[0].position[1] if blueprint.units else 0.0) - 50.0,
+                ],
+                "dir": [0.0, -0.5, 0.87],
+                "up": [0.0, 0.87, 0.5],
+                "aside": [1.0, 0.0, 0.0],
+            },
         },
         "binarizationWanted": 0,
         "sourceName": blueprint.brief.title,
         "addons": addons,
-        "AddonsMetaData": _addons_metadata(addons),
+        "AddonsMetaData": {"List": [{"className": a, "name": a} for a in addons]},
+        "randomSeed": 12345,
         "ScenarioData": {
             "author": "arma3-builder",
             "overviewText": blueprint.brief.summary,
         },
+        "CustomAttributes": {"version": 1},
+        "ItemIDProvider": {"nextID": id_counter.peek()},
+        "MarkerIDProvider": {"nextID": max(1, len(markers))},
+        "LayerIndexProvider": {"nextID": 1},
+        "Connections": {"ItemIDProvider": {"nextID": 1}},
         "Mission": {
-            "Intel": {
-                "timeOfChanges": 1.0,
-                "startWeather": 0.3 if blueprint.brief.weather == "clear" else 0.7,
-                "startWind": 0.1,
-                "startWaves": 0.1,
-                "forecastWeather": 0.3,
-                "year": 2035,
-                "month": 6,
-                "day": 24,
-                "hour": int(blueprint.brief.time_of_day.split(":")[0]),
-                "minute": int(blueprint.brief.time_of_day.split(":")[1]) if ":" in blueprint.brief.time_of_day else 0,
-            },
+            "Intel": _intel(blueprint),
             "Entities": {"items": items},
+            "Markers": {"items": markers} if markers else None,
         },
     }
 
 
-def _addons_metadata(addons: list[str]) -> dict[str, Any]:
+class _IdCounter:
+    def __init__(self, *, start: int) -> None:
+        self._v = start
+
+    def next(self) -> int:
+        v = self._v
+        self._v += 1
+        return v
+
+    def peek(self) -> int:
+        return self._v
+
+
+def _intel(blueprint: MissionBlueprint) -> dict[str, Any]:
+    hour, _, minute = blueprint.brief.time_of_day.partition(":")
+    try:
+        h = int(hour)
+    except ValueError:
+        h = 12
+    try:
+        m = int(minute or 0)
+    except ValueError:
+        m = 0
+    weather_map = {"clear": 0.2, "overcast": 0.5, "rain": 0.8, "storm": 1.0}
+    w = weather_map.get(blueprint.brief.weather, 0.3)
     return {
-        "List": [{"className": a, "name": a} for a in addons],
+        "timeOfChanges": 1800.0,
+        "startWeather": w,
+        "startWind": 0.1,
+        "startWaves": 0.1,
+        "forecastWeather": w,
+        "forecastWind": 0.1,
+        "forecastWaves": 0.1,
+        "forecastLightnings": 0.0,
+        "year": 2035,
+        "month": 6,
+        "day": 24,
+        "hour": h,
+        "minute": m,
     }
 
 
-def _group_node(idx: int, side: str, units: list[UnitPlacement], waypoints: list[Waypoint]) -> dict[str, Any]:
+def _group_node(
+    ids: _IdCounter,
+    side: str,
+    units: list[UnitPlacement],
+    waypoints: list[Waypoint],
+) -> dict[str, Any]:
     entities: list[dict[str, Any]] = []
     for i, u in enumerate(units):
+        is_leader = 1 if (u.is_leader or i == 0) else 0
         entities.append({
             "dataType": "Object",
-            "id": idx * 1000 + i + 1,
+            "id": ids.next(),
             "side": side,
             "Attributes": {
-                "name": u.name or f"unit_{idx}_{i}",
-                "isPlayer": int(u.is_player),
-                "isLeader": int(u.is_leader or i == 0),
+                "name": u.name or f"unit_{i}",
+                "isPlayer": 1 if u.is_player else 0,
+                "isLeader": is_leader,
+                "skill": 0.6,
+                "description": u.name or "",
             },
             "PositionInfo": {
-                "position": list(u.position),
+                "position": [u.position[0], u.position[2], u.position[1]],
                 "angleY": u.direction,
             },
             "type": u.classname,
+            "flags": 6 if u.is_player else 4,
         })
-    for j, w in enumerate(waypoints):
+    for w in waypoints:
         entities.append({
             "dataType": "Waypoint",
-            "id": idx * 1000 + 500 + j,
-            "PositionInfo": {"position": list(w.position)},
+            "id": ids.next(),
+            "PositionInfo": {"position": [w.position[0], w.position[2], w.position[1]]},
             "type": w.type,
             "behaviour": w.behaviour,
             "speed": w.speed,
+            "combatMode": "YELLOW",
+            "formation": "WEDGE",
         })
     return {
         "dataType": "Group",
-        "id": 10_000 + idx,
+        "id": ids.next(),
         "side": side,
         "Entities": {"items": entities},
     }
@@ -136,26 +240,24 @@ def render_sqm(sqm: dict[str, Any]) -> str:
 
 
 def _internal_render(sqm: dict[str, Any], indent: int = 0) -> str:
-    """Minimal but valid Eden-format SQM emitter.
-
-    Produces a `version=53;` header followed by class blocks. This is a
-    deterministic deep traversal: scalars become `key=value;`, dicts become
-    nested `class key { ... };` blocks, and lists become indexed or array
-    literals depending on element type.
-    """
+    """Deterministic Eden-format SQM emitter."""
     pad = "    " * indent
     out: list[str] = []
     items_array_keys = {"items", "List"}
 
     for key, value in sqm.items():
+        if value is None:
+            continue
         if isinstance(value, dict):
-            out.append(f"{pad}class {key}\n{pad}{{")
+            out.append(f"{pad}class {key}")
+            out.append(f"{pad}{{")
             out.append(_internal_render(value, indent + 1))
             out.append(f"{pad}}};")
         elif isinstance(value, list) and key in items_array_keys:
             for i, entry in enumerate(value):
                 if isinstance(entry, dict):
-                    out.append(f"{pad}class Item{i}\n{pad}{{")
+                    out.append(f"{pad}class Item{i}")
+                    out.append(f"{pad}{{")
                     out.append(_internal_render(entry, indent + 1))
                     out.append(f"{pad}}};")
                 else:
@@ -172,6 +274,8 @@ def _render_scalar(v: Any) -> str:
     if isinstance(v, bool):
         return "1" if v else "0"
     if isinstance(v, (int, float)):
+        if isinstance(v, float) and v.is_integer():
+            return repr(v)
         return repr(v)
     if isinstance(v, str):
         escaped = v.replace('"', '""')

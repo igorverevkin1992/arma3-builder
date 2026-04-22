@@ -30,7 +30,10 @@ class QAAgent(Agent):
         *,
         iteration: int,
     ) -> QAReport:
-        report = build_qa_report(plan, artifacts, iteration=iteration)
+        unknowns = ctx.memory.get("unknown_classnames", [])
+        report = build_qa_report(
+            plan, artifacts, iteration=iteration, unknown_classnames=unknowns,
+        )
         ctx.memory.setdefault("qa_history", []).append({
             "iteration": iteration,
             "errors": len(report.errors),

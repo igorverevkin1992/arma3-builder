@@ -46,11 +46,17 @@ class NarrativeAgent(Agent):
     # -------------------------------------------------------------- fallback
 
     def _fallback_plan(self, brief: CampaignBrief, ctx: AgentContext) -> CampaignPlan:
-        blueprints = [self._fallback_blueprint(m, brief, ctx) for m in brief.missions]
+        from ..arma.campaign import slugify
+        blueprints = []
+        for i, m in enumerate(brief.missions):
+            bp = self._fallback_blueprint(m, brief, ctx, index=i)
+            bp.mission_id = f"m{i + 1:02d}_{slugify(m.title)}"
+            blueprints.append(bp)
         return CampaignPlan(brief=brief, blueprints=blueprints)
 
     def _fallback_blueprint(
-        self, mission: MissionBrief, brief: CampaignBrief, ctx: AgentContext
+        self, mission: MissionBrief, brief: CampaignBrief, ctx: AgentContext,
+        *, index: int = 0,
     ) -> MissionBlueprint:
         # Choose a deterministic FSM matching the canonical pattern from the TZ:
         # Insertion -> Movement -> Engagement -> Extraction.
@@ -161,15 +167,16 @@ class NarrativeAgent(Agent):
     def _fallback_units(
         self, mission: MissionBrief, brief: CampaignBrief, ctx: AgentContext
     ) -> list[UnitPlacement]:
-        # Try the registry; fall back to vanilla classes.
-        west_class = "B_Soldier_F"
-        east_class = "O_Soldier_F"
-        for info in ctx.registry.filter(side="WEST", type="Man"):
-            west_class = info.classname
-            break
-        for info in ctx.registry.filter(side="EAST", type="Man"):
-            east_class = info.classname
-            break
+        # Resolve classnames: prefer RAG (mod-aware, filtered by tenant/faction),
+        # then registry, finally hardcoded vanilla.
+        west_class = self._pick_rifleman(
+            ctx, side=mission.side, faction=brief.factions.get(mission.side),
+            tenants=brief.mods, fallback="B_Soldier_F",
+        )
+        east_class = self._pick_rifleman(
+            ctx, side=mission.enemy_side, faction=brief.factions.get(mission.enemy_side),
+            tenants=brief.mods, fallback="O_Soldier_F",
+        )
 
         units: list[UnitPlacement] = []
         for i in range(max(1, mission.player_count)):
@@ -193,3 +200,38 @@ class NarrativeAgent(Agent):
                 group_id="enemy",
             ))
         return units
+
+    def _pick_rifleman(
+        self,
+        ctx: AgentContext,
+        *,
+        side: str,
+        faction: str | None,
+        tenants: list[str],
+        fallback: str,
+    ) -> str:
+        """RAG-first classname resolution.
+
+        Order of preference:
+          1. RAG hybrid search filtered by tenant+side+type=Man (mod-aware)
+          2. Classname registry filter (in-process seed data)
+          3. Fallback vanilla classname
+        """
+        # 1) RAG
+        try:
+            hits = ctx.retriever.classnames(
+                query=faction or f"{side} rifleman soldier",
+                type="Man",
+                side=side,
+                tenants=tenants or None,
+                k=1,
+            )
+            if hits:
+                return hits[0].metadata.get("classname", fallback)
+        except Exception:  # noqa: BLE001  — RAG must never crash generation
+            pass
+        # 2) Registry
+        for info in ctx.registry.filter(side=side, type="Man"):
+            return info.classname
+        # 3) Fallback
+        return fallback

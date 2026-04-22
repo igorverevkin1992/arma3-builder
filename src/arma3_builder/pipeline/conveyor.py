@@ -31,7 +31,7 @@ from ..protocols import (
     GeneratedArtifact,
     GenerationResult,
 )
-from ..rag import HybridRetriever
+from ..rag import HybridRetriever, bootstrap
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,6 +63,12 @@ class Pipeline:
         self.config = config or PipelineConfig()
         self._llm = llm or get_llm_client()
         self._retriever = retriever or HybridRetriever()
+        # Hydrate RAG from seed data on first boot — agents query it during
+        # generation, so the store must not be empty.
+        try:
+            bootstrap(self._retriever.store)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("rag_bootstrap_failed", error=str(exc))
         self._registry = registry or ClassnameRegistry.from_seed_files()
         self.orchestrator = OrchestratorAgent()
         self.narrative = NarrativeAgent()
@@ -77,40 +83,78 @@ class Pipeline:
             registry=self._registry,
         )
 
-    async def generate(self, prompt: str) -> GenerationResult:
+    async def generate(self, prompt: str, *, bus=None) -> GenerationResult:
         ctx = self.make_context()
-
+        if bus:
+            await bus.publish("agent_started", agent="orchestrator")
         brief = await self.orchestrator.run(prompt, ctx)
+        if bus:
+            await bus.publish("agent_done", agent="orchestrator",
+                              missions=len(brief.missions))
+            await bus.publish("agent_started", agent="narrative")
         plan = await self.narrative.run(brief, ctx)
-        return await self.generate_from_plan(plan, ctx=ctx)
+        if bus:
+            await bus.publish("agent_done", agent="narrative",
+                              states=sum(len(bp.fsm.states) for bp in plan.blueprints))
+        return await self.generate_from_plan(plan, ctx=ctx, bus=bus)
 
-    async def generate_from_brief(self, brief: CampaignBrief) -> GenerationResult:
+    async def generate_from_brief(self, brief: CampaignBrief, *, bus=None) -> GenerationResult:
         ctx = self.make_context()
+        if bus:
+            await bus.publish("agent_started", agent="narrative")
         plan = await self.narrative.run(brief, ctx)
-        return await self.generate_from_plan(plan, ctx=ctx)
+        if bus:
+            await bus.publish("agent_done", agent="narrative",
+                              states=sum(len(bp.fsm.states) for bp in plan.blueprints))
+        return await self.generate_from_plan(plan, ctx=ctx, bus=bus)
 
     async def generate_from_plan(
         self,
         plan: CampaignPlan,
         *,
         ctx: AgentContext | None = None,
+        bus=None,
     ) -> GenerationResult:
         ctx = ctx or self.make_context()
+        if bus:
+            await bus.publish("agent_started", agent="config_master")
 
         config_files, mission_dirs = await self.config_master.run(plan, ctx)
-        sqf_files: list[GeneratedArtifact] = []
-        for i, blueprint in enumerate(plan.blueprints):
-            sqf_files.extend(
-                await self.scripter.run(blueprint, ctx, mission_dir=mission_dirs[i])
-            )
+        if bus:
+            await bus.publish("agent_done", agent="config_master",
+                              artifacts=len(config_files))
+            await bus.publish("agent_started", agent="scripter",
+                              missions=len(plan.blueprints))
+
+        # Missions are independent → run scripter in parallel.
+        import asyncio as _asyncio
+        scripter_tasks = [
+            self.scripter.run(bp, ctx, mission_dir=mission_dirs[i])
+            for i, bp in enumerate(plan.blueprints)
+        ]
+        sqf_batches = await _asyncio.gather(*scripter_tasks)
+        sqf_files: list[GeneratedArtifact] = [a for batch in sqf_batches for a in batch]
         artifacts = config_files + sqf_files
+        if bus:
+            await bus.publish("agent_done", agent="scripter",
+                              artifacts=len(sqf_files))
+            await bus.publish("agent_started", agent="qa")
 
         report = await self.qa.run(plan, artifacts, ctx, iteration=1)
         iteration = 1
         while not report.is_clean(strict=self.config.qa_strict) and iteration < self.config.max_iterations:
             iteration += 1
+            if bus:
+                await bus.publish("qa_iteration", iteration=iteration,
+                                  errors=len(report.errors),
+                                  warnings=len(report.warnings))
             artifacts = await self.scripter.repair(artifacts, report, ctx)
             report = await self.qa.run(plan, artifacts, ctx, iteration=iteration)
+        if bus:
+            await bus.publish("agent_done", agent="qa",
+                              errors=len(report.errors),
+                              warnings=len(report.warnings),
+                              iterations=iteration)
 
         from ..arma.campaign import slugify
         out_path = package_campaign(

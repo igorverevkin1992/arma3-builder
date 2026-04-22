@@ -122,7 +122,9 @@ def validate_campaign_endstates(
     """Ensure that every `endN = "..."` referenced in Campaign Description.ext
     is matched by a corresponding `class endN` in the target mission's
     CfgDebriefing. This catches the most common cause of campaign load
-    failures."""
+    failures. Missions are matched by their stable `mission_id`, NOT by
+    substring-on-title which is brittle.
+    """
     by_path = {a.relative_path: a for a in artifacts}
     campaign_ext = by_path.get("Description.ext")
     if not campaign_ext:
@@ -134,27 +136,53 @@ def validate_campaign_endstates(
         referenced.add(m.group(1))
 
     for blueprint in plan.blueprints:
-        # Find the mission's description.ext and pull declared end classes.
-        for path, art in by_path.items():
-            if not path.endswith("description.ext"):
-                continue
-            if blueprint.brief.title.lower().replace(" ", "_") not in path.lower():
-                continue
-            declared = set(_extract_debriefing_ends(art.content))
-            for end_state in blueprint.fsm.end_types():
-                if end_state in referenced and end_state not in declared:
-                    findings.append(
-                        QAFinding(
-                            file=art.relative_path,
-                            severity=Severity.ERROR,
-                            code="A3B200",
-                            message=(
-                                f"End state `{end_state}` is referenced by Campaign "
-                                f"Description.ext but missing from CfgDebriefing"
-                            ),
-                            suggestion=f"Add `class {end_state} {{ ... }};` to the mission description.ext",
-                        )
+        if not blueprint.mission_id:
+            continue
+        # Exact-path lookup — "missions/<mission_id>.<map>/description.ext".
+        target_path = next(
+            (p for p in by_path if p.endswith("/description.ext") and blueprint.mission_id in p),
+            None,
+        )
+        if not target_path:
+            continue
+        art = by_path[target_path]
+        declared = set(_extract_debriefing_ends(art.content))
+        for end_state in blueprint.fsm.end_types():
+            if end_state in referenced and end_state not in declared:
+                findings.append(
+                    QAFinding(
+                        file=art.relative_path,
+                        severity=Severity.ERROR,
+                        code="A3B200",
+                        message=(
+                            f"End state `{end_state}` referenced by Campaign "
+                            f"Description.ext but missing from CfgDebriefing"
+                        ),
+                        suggestion=f"Add `class {end_state} {{ ... }};` to description.ext",
                     )
+                )
+    return findings
+
+
+def validate_unknown_classnames(unknown: list[str]) -> list[QAFinding]:
+    """Emit an ERROR per unresolved classname.
+
+    Per TZ §9, unknown classnames → missing AddonsMetaData → silent object
+    deletion by the engine. We want designers to know *before* loading the mission.
+    """
+    findings: list[QAFinding] = []
+    for cls in unknown:
+        findings.append(QAFinding(
+            file="mission.sqm",
+            severity=Severity.ERROR,
+            code="A3B210",
+            message=f"Classname `{cls}` not found in classname registry/RAG",
+            suggestion=(
+                "Either install the mod and ingest its config.cpp "
+                "(`scripts/ingest_mod.py`), or pick a vanilla class. "
+                "The engine silently deletes unknown objects at load time."
+            ),
+        ))
     return findings
 
 
@@ -172,8 +200,11 @@ def build_qa_report(
     *,
     iteration: int,
     use_sqflint: bool = True,
+    unknown_classnames: list[str] | None = None,
 ) -> QAReport:
     findings = analyze_artifacts(artifacts, use_sqflint=use_sqflint)
     if plan is not None:
         findings.extend(validate_campaign_endstates(plan, artifacts))
+    if unknown_classnames:
+        findings.extend(validate_unknown_classnames(unknown_classnames))
     return QAReport(findings=findings, iteration=iteration)

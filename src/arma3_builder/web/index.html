@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>arma3-builder</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+<header>
+    <h1>arma3-builder <span class="tag">multi-agent campaign generator</span></h1>
+    <p class="sub">Prompt it, pick a template, or paste a brief. The pipeline handles SQF, SQM, description.ext, Campaign flow, QA and packaging.</p>
+</header>
+
+<main>
+    <section class="panel left">
+        <h2>1. Describe</h2>
+        <div class="tabs">
+            <button class="tab active" data-tab="prompt">Prompt</button>
+            <button class="tab" data-tab="template">Template</button>
+            <button class="tab" data-tab="brief">Raw brief</button>
+        </div>
+
+        <div class="tab-body" data-tab="prompt">
+            <textarea id="prompt" rows="6" placeholder="Coop за MARSOC на Tanoa. Миссия 1 — уничтожить SAM ночью. Миссия 2 — спасти пилота."></textarea>
+        </div>
+
+        <div class="tab-body hidden" data-tab="template">
+            <select id="template-id"></select>
+            <div id="template-params"></div>
+        </div>
+
+        <div class="tab-body hidden" data-tab="brief">
+            <textarea id="brief" rows="12" placeholder='{"name":"…","missions":[…]}'></textarea>
+        </div>
+
+        <button id="generate" class="primary">Generate</button>
+        <button id="preview" class="secondary">Preview FSM only</button>
+    </section>
+
+    <section class="panel center">
+        <h2>2. Progress</h2>
+        <ol id="progress" class="progress"></ol>
+
+        <div id="result" class="hidden">
+            <h3>Quality score</h3>
+            <div id="score" class="score-grid"></div>
+
+            <h3>QA report <span id="qa-summary" class="muted"></span></h3>
+            <ul id="findings" class="findings"></ul>
+
+            <h3>Missions</h3>
+            <div id="missions"></div>
+
+            <h3>Refine</h3>
+            <div class="refine-row">
+                <input id="refine-input" placeholder='e.g. "make mission 2 rainy night"'>
+                <button id="refine" class="secondary">Apply refinement</button>
+            </div>
+
+            <h3>Launch</h3>
+            <div id="launch"></div>
+        </div>
+
+        <div id="diff-panel" class="hidden">
+            <h3>Changes since last run</h3>
+            <div id="diff-list"></div>
+        </div>
+    </section>
+
+    <section class="panel right">
+        <h2>3. FSM graph</h2>
+        <canvas id="fsm" width="480" height="600"></canvas>
+        <p class="muted small" id="fsm-mission-label"></p>
+    </section>
+</main>
+
+<footer>
+    <span>powered by the arma3-builder pipeline</span>
+    <span id="version">v0.2</span>
+</footer>
+
+<script src="/ui/app.js"></script>
+</body>
+</html>

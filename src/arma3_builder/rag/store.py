@@ -65,6 +65,38 @@ def _hashed_embed(tokens: list[str], dim: int = 256) -> list[float]:
     return [v / norm for v in vec]
 
 
+_ST_MODEL = None
+
+
+def _sentence_transformer_embed(text: str) -> list[float] | None:
+    """Optional dense embedding via `sentence-transformers`.
+
+    Loaded lazily and cached. Returns None if the package (or model) is
+    unavailable, in which case the caller falls back to the hashed embedding.
+    Controlled by env ``ARMA3_ST_MODEL`` (defaults to MiniLM for CPU speed).
+    """
+    import os
+    global _ST_MODEL
+    if _ST_MODEL is False:
+        return None
+    if _ST_MODEL is None:
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+
+            model_name = os.environ.get(
+                "ARMA3_ST_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+            )
+            _ST_MODEL = SentenceTransformer(model_name)
+        except Exception:  # noqa: BLE001
+            _ST_MODEL = False
+            return None
+    try:
+        vec = _ST_MODEL.encode(text, normalize_embeddings=True)
+        return vec.tolist()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @dataclass
 class MemoryStore:
     docs: list[Document] = field(default_factory=list)
@@ -177,6 +209,9 @@ class QdrantStore:
             )
 
     def _embed(self, text: str) -> list[float]:
+        dense = _sentence_transformer_embed(text)
+        if dense is not None and len(dense) == self.dim:
+            return dense
         return _hashed_embed(_tokens(text), dim=self.dim)
 
     def upsert(self, docs: Iterable[Document]) -> None:

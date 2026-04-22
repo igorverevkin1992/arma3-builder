@@ -2,6 +2,10 @@
 
 Used by the SQM/description generators when no RAG retriever is configured
 (tests, offline runs). The registry maps `classname -> {addon, type, side}`.
+
+Unknown classnames are NOT silently guessed. The caller gets an empty string
+and `resolve_or_flag` collects unknowns so the QA pipeline can emit ERROR
+findings — matching the TZ requirement to hard-block missing `addons[]`.
 """
 from __future__ import annotations
 
@@ -19,11 +23,13 @@ class ClassnameInfo:
     type: str = "Object"
     faction: str = ""
     side: str = ""
+    display_name: str = ""
 
 
 @dataclass
 class ClassnameRegistry:
     items: dict[str, ClassnameInfo] = field(default_factory=dict)
+    unknown: set[str] = field(default_factory=set)
 
     def register(self, info: ClassnameInfo) -> None:
         self.items[info.classname] = info
@@ -32,11 +38,11 @@ class ClassnameRegistry:
         info = self.items.get(classname)
         if info:
             return info.addon
-        # heuristic fallback for unknown classnames: prefix-based guess
-        for prefix, addon in _PREFIX_GUESS.items():
-            if classname.startswith(prefix):
-                return addon
+        self.unknown.add(classname)
         return ""
+
+    def is_known(self, classname: str) -> bool:
+        return classname in self.items
 
     def filter(
         self,
@@ -69,14 +75,8 @@ class ClassnameRegistry:
                 reg.register(ClassnameInfo(**entry))
         return reg
 
-
-_PREFIX_GUESS = {
-    "rhsusf_": "rhsusf_main",
-    "rhs_": "rhs_main_loadorder",
-    "CUP_": "cup_units_core",
-    "ace_": "ace_main",
-    "B_": "A3_Characters_F",
-    "O_": "A3_Characters_F",
-    "I_": "A3_Characters_F",
-    "C_": "A3_Characters_F_Beta",
-}
+    def take_unknowns(self) -> list[str]:
+        """Return and clear the list of classnames that could not be resolved."""
+        out = sorted(self.unknown)
+        self.unknown.clear()
+        return out
