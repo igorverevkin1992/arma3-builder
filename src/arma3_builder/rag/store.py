@@ -189,7 +189,7 @@ class QdrantStore:
     overriding `_embed`.
     """
 
-    def __init__(self, *, collection: str = "arma3_kb", dim: int = 256) -> None:
+    def __init__(self, *, collection: str = "arma3_kb", dim: int | None = None) -> None:
         try:
             from qdrant_client import QdrantClient  # type: ignore[import-not-found]
             from qdrant_client.http import models  # type: ignore[import-not-found]
@@ -200,12 +200,22 @@ class QdrantStore:
         self._models = models
         self.client = QdrantClient(url=s.qdrant_url, api_key=s.qdrant_api_key or None)
         self.collection = collection
-        self.dim = dim
+
+        # Decide vector dim ONCE: probe the actual sentence-transformers
+        # output if available, else fall back to the legacy 256-dim hash.
+        # The previous implementation hard-coded 256 but ST outputs 384
+        # (MiniLM), so the dense path was silently rejected.
+        if dim is not None:
+            self.dim = dim
+        else:
+            probe = _sentence_transformer_embed("dimension probe")
+            self.dim = len(probe) if probe is not None else 256
+
         existing = {c.name for c in self.client.get_collections().collections}
         if collection not in existing:
             self.client.create_collection(
                 collection_name=collection,
-                vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
+                vectors_config=models.VectorParams(size=self.dim, distance=models.Distance.COSINE),
             )
 
     def _embed(self, text: str) -> list[float]:

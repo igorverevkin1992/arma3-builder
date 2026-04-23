@@ -106,6 +106,15 @@ class FsmGraph(BaseModel):
 
     initial: str
     states: list[FsmState]
+    on_enter_global: list[str] = Field(
+        default_factory=list,
+        description=(
+            "SQF statements that run once when the FSM is initialised, "
+            "BEFORE any state on_enter fires. Use this to wire up "
+            "namespace variables that transition conditions reference "
+            "(e.g. `A3B_enemyLead = e1`)."
+        ),
+    )
 
     def state(self, sid: str) -> FsmState:
         for s in self.states:

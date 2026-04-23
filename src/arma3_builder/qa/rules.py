@@ -37,11 +37,18 @@ RULES: list[Rule] = [
         suggestion="Add `sleep`/`uiSleep` or replace with `CBA_fnc_addPerFrameHandler`",
     ),
     Rule(
+        # Only flag execVM when it sits inside a repetition / event context.
+        # A one-shot execVM (e.g. firing briefing.sqf from initPlayerLocal)
+        # is fine; flagging it spammed the QA report without value.
         code="A3B003",
-        pattern=re.compile(r"\bexecVM\b\s*\"[^\"]+\.sqf\""),
+        pattern=re.compile(
+            r"(?:forEach|while\s*\{|for\s*\[|addAction|addEventHandler|"
+            r"addMissionEventHandler|spawn|onEachFrame)[^;]*?\bexecVM\b\s*\"[^\"]+\.sqf\"",
+            re.DOTALL,
+        ),
         severity=Severity.WARNING,
-        message="execVM in repeated context — bypasses CfgFunctions preload",
-        suggestion="Pre-compile via CfgFunctions and use `call A3B_fnc_xxx`",
+        message="execVM inside loop/event context — pre-compile via CfgFunctions",
+        suggestion="Move the script to CfgFunctions and `call A3B_fnc_xxx` instead",
     ),
     Rule(
         code="A3B004",

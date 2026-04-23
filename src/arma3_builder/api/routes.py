@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ..arma.fsm import diagram_for_blueprint
@@ -29,7 +29,29 @@ from .schemas import (
 router = APIRouter(prefix="", tags=["arma3-builder"])
 
 _pipeline = Pipeline()
-_last_run_cache: dict[str, list] = {}
+
+
+# Per-session run cache keyed by `X-Session-Id` header (UI sends it). Falls
+# back to a single global slot for backwards-compat curl users — that path
+# is documented as not safe for concurrent calls.
+_session_runs: dict[str, dict[str, Any]] = {}
+_DEFAULT_SESSION = "_default"
+
+
+def _session_key(req_headers: dict[str, str] | None = None) -> str:
+    if req_headers:
+        sid = req_headers.get("x-session-id") or req_headers.get("X-Session-Id")
+        if sid:
+            return sid
+    return _DEFAULT_SESSION
+
+
+def _store_run(session: str, *, plan, artifacts) -> None:
+    _session_runs[session] = {"plan": plan, "artifacts": artifacts}
+
+
+def _previous_run(session: str) -> dict[str, Any]:
+    return _session_runs.get(session, {})
 
 
 @router.get("/health")
@@ -43,11 +65,16 @@ async def health() -> dict[str, str]:
 
 
 @router.post("/generate", response_model=GenerateResponse)
-async def generate(req: GenerateRequest) -> GenerateResponse:
+async def generate(req: GenerateRequest, request: Request) -> GenerateResponse:
+    # Reuse the singleton when possible — bootstrap is expensive. Construct a
+    # one-off Pipeline only for the rare zip path so the singleton's default
+    # config (no zip) isn't perturbed by a concurrent caller.
     pipe = _pipeline
     if req.create_zip:
-        cfg = PipelineConfig(create_zip=True)
-        pipe = Pipeline(config=cfg)
+        pipe = Pipeline(config=PipelineConfig(create_zip=True),
+                        retriever=_pipeline._retriever,
+                        registry=_pipeline._registry_template,
+                        llm=_pipeline._llm)
     if req.brief is not None:
         result = await pipe.generate_from_brief(req.brief)
     elif req.prompt:
@@ -55,8 +82,8 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
     else:
         raise HTTPException(status_code=400, detail="prompt or brief required")
 
-    _last_run_cache["artifacts"] = result.artifacts
-    _last_run_cache["plan"] = result.plan
+    session = _session_key(dict(request.headers))
+    _store_run(session, plan=result.plan, artifacts=result.artifacts)
 
     score = score_campaign(result.plan, result.qa)
     first = result.plan.blueprints[0] if result.plan.blueprints else None
@@ -79,8 +106,9 @@ async def generate(req: GenerateRequest) -> GenerateResponse:
 
 
 @router.post("/generate/stream")
-async def generate_stream(req: GenerateRequest) -> StreamingResponse:
+async def generate_stream(req: GenerateRequest, request: Request) -> StreamingResponse:
     bus = EventBus()
+    session = _session_key(dict(request.headers))
 
     async def run() -> None:
         try:
@@ -90,10 +118,8 @@ async def generate_stream(req: GenerateRequest) -> StreamingResponse:
                 result = await _pipeline.generate(req.prompt, bus=bus)
             else:
                 await bus.publish("error", message="prompt or brief required")
-                await bus.finish()
                 return
-            _last_run_cache["artifacts"] = result.artifacts
-            _last_run_cache["plan"] = result.plan
+            _store_run(session, plan=result.plan, artifacts=result.artifacts)
             await bus.publish(
                 "done",
                 output_path=result.output_path,
@@ -103,13 +129,31 @@ async def generate_stream(req: GenerateRequest) -> StreamingResponse:
                 score=score_campaign(result.plan, result.qa).to_dict(),
                 plan=result.plan.model_dump(mode="json"),
             )
+        except asyncio.CancelledError:
+            # Client disconnected — propagate so the task tree shuts down.
+            raise
         except Exception as exc:  # noqa: BLE001
             await bus.publish("error", message=str(exc))
         finally:
             await bus.finish()
 
-    asyncio.create_task(run())
-    return StreamingResponse(bus.stream(), media_type="text/event-stream")
+    task = asyncio.create_task(run())
+
+    async def streamer() -> Any:
+        try:
+            async for chunk in bus.stream():
+                yield chunk
+        finally:
+            # Ensures the background task is collected if the client closes
+            # the SSE early (browser tab closed, network drop, ...).
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+
+    return StreamingResponse(streamer(), media_type="text/event-stream")
 
 
 # --------------------------------------------------------------------------- #
@@ -174,7 +218,7 @@ async def templates_instantiate(template_id: str, params: dict[str, Any]) -> Tem
 
 
 @router.post("/refine", response_model=GenerateResponse)
-async def refine(req: RefineRequest) -> GenerateResponse:
+async def refine(req: RefineRequest, request: Request) -> GenerateResponse:
     llm = _pipeline._llm
     plan = await refine_plan(
         req.plan, req.instruction,
@@ -182,11 +226,12 @@ async def refine(req: RefineRequest) -> GenerateResponse:
     )
     result = await _pipeline.generate_from_plan(plan)
 
-    # Produce a diff view against the previous run if we have one.
-    previous = _last_run_cache.get("artifacts", [])
+    # Per-session diff so concurrent refines don't pollute each other's
+    # "before" snapshot.
+    session = _session_key(dict(request.headers))
+    previous = _previous_run(session).get("artifacts", [])
     diff = diff_artifacts(previous, result.artifacts)
-    _last_run_cache["artifacts"] = result.artifacts
-    _last_run_cache["plan"] = result.plan
+    _store_run(session, plan=result.plan, artifacts=result.artifacts)
 
     score = score_campaign(result.plan, result.qa)
     first = result.plan.blueprints[0] if result.plan.blueprints else None
@@ -224,9 +269,21 @@ async def ui_root() -> FileResponse:
     return FileResponse(index, media_type="text/html")
 
 
+_WEB_DIR_RESOLVED = _WEB_DIR.resolve()
+
+
 @router.get("/ui/{asset:path}")
 async def ui_asset(asset: str) -> FileResponse:
-    path = _WEB_DIR / asset
-    if not path.exists() or not path.is_file():
+    """Serve a file from `web/` after explicit traversal protection.
+
+    `Path(_WEB_DIR) / asset` does NOT canonicalise — `..` segments would
+    walk out of the web directory. We resolve and verify containment.
+    """
+    candidate = (_WEB_DIR / asset).resolve()
+    try:
+        candidate.relative_to(_WEB_DIR_RESOLVED)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="path traversal blocked") from exc
+    if not candidate.exists() or not candidate.is_file():
         raise HTTPException(status_code=404, detail="asset not found")
-    return FileResponse(path)
+    return FileResponse(candidate)

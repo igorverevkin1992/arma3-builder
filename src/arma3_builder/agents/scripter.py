@@ -236,15 +236,23 @@ class ScripterAgent(Agent):
     # -------------------------------------------------------------- helpers
 
     def _tasks_registrar(self, blueprint: MissionBlueprint) -> str:
-        out = ["// fn_registerTasks.sqf — registers BIS task framework entries.",
-               "if (!hasInterface) exitWith {};", ""]
+        # Called from initServer.sqf — runs server-side only. BIS_fnc_taskCreate
+        # broadcasts the task to all clients automatically. The previous
+        # `if (!hasInterface) exitWith {}` guard meant a dedicated server
+        # silently registered nothing.
+        out = [
+            "// fn_registerTasks.sqf — registers BIS task framework entries.",
+            "// Runs server-side; BIS_fnc_taskCreate broadcasts to clients.",
+            "if (!isServer) exitWith {};",
+            "",
+        ]
         for task in blueprint.diary.tasks:
             tid = task.get("id", "task1")
             title = task.get("title", "Task").replace('"', '""')
             desc = task.get("description", "").replace('"', '""')
             out.append(
                 '['
-                f'"{tid}", true, ["{desc}", "{title}", ""], objNull, "ASSIGNED", -1, true, "", true'
+                f'"{tid}", west, ["{desc}", "{title}", ""], objNull, "ASSIGNED", -1, true, "", true'
                 '] call BIS_fnc_taskCreate;'
             )
         return "\n".join(out)
@@ -280,9 +288,14 @@ class ScripterAgent(Agent):
         Used as a simple capability check: if the system was bootstrapped with
         CBA seed docs (or the user indexed their own mod set), CBA-dependent
         code paths are safe to emit. Otherwise fall back to vanilla.
+
+        Default to True when the retriever is unavailable so we don't
+        regress users who explicitly listed `cba_main` in their brief.
         """
         try:
             hits = ctx.retriever.commands("CBA_statemachine_fnc_create", k=1)
-            return any("CBA_statemachine" in h.text for h in hits) or True
         except Exception:  # noqa: BLE001
             return True
+        if not hits:
+            return False
+        return any("CBA_statemachine" in h.text for h in hits)

@@ -53,12 +53,16 @@ class OrchestratorAgent(Agent):
             return self._fallback_brief(prompt)
         try:
             data = rsp.parse_json()
-            brief = CampaignBrief.model_validate(data)
-            ctx.memory["brief"] = brief.model_dump()
-            return brief
-        except (json.JSONDecodeError, Exception) as exc:  # noqa: BLE001
-            self.log.warning("orchestrator_parse_failed", error=str(exc))
+        except json.JSONDecodeError as exc:
+            self.log.warning("orchestrator_json_parse_failed", error=str(exc))
             return self._fallback_brief(prompt)
+        try:
+            brief = CampaignBrief.model_validate(data)
+        except Exception as exc:  # noqa: BLE001 — pydantic ValidationError
+            self.log.warning("orchestrator_schema_validation_failed", error=str(exc))
+            return self._fallback_brief(prompt)
+        ctx.memory["brief"] = brief.model_dump()
+        return brief
 
     # -------------------------------------------------------------- fallback
 

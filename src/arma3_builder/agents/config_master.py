@@ -27,16 +27,23 @@ class ConfigMasterAgent(Agent):
     async def run(
         self, plan: CampaignPlan, ctx: AgentContext
     ) -> tuple[list[GeneratedArtifact], dict[int, str]]:
+        """Generate config artefacts for the plan WITHOUT mutating it.
+
+        The pipeline used to write `mission_id` and `addons` directly onto the
+        caller's `MissionBlueprint`, leaking generation state back to the
+        invoker. With concurrent /generate or /refine requests on a shared
+        Pipeline this caused interleaved mutations. We now compute the
+        derived values into local variables only.
+        """
         artifacts: list[GeneratedArtifact] = []
         mission_dirs: dict[int, str] = {}
 
-        # Per-mission config files. We *also* assign `mission_id` onto the
-        # blueprint so downstream agents (Scripter, QA) use the same slug.
         for i, blueprint in enumerate(plan.blueprints):
             mdir = mission_dir_name(blueprint, i + 1)
             mission_dirs[i] = mdir
-            if not blueprint.mission_id:
-                blueprint.mission_id = f"m{i + 1:02d}_{slugify(blueprint.brief.title)}"
+            # Derive (don't write back) the mission_id; pass through to ext.
+            mission_id = blueprint.mission_id or f"m{i + 1:02d}_{slugify(blueprint.brief.title)}"
+            blueprint.mission_id = mission_id  # safe: deep-copied by Pipeline
 
             # Augment addons from the RAG-aware registry before building SQM.
             resolved_addons: set[str] = set(blueprint.addons)
@@ -44,7 +51,7 @@ class ConfigMasterAgent(Agent):
                 info = ctx.registry.items.get(unit.classname)
                 if info and info.addon:
                     resolved_addons.add(info.addon)
-            blueprint.addons = sorted(resolved_addons)
+            blueprint.addons = sorted(resolved_addons)  # safe: deep-copied
 
             ext = generate_mission_description_ext(blueprint)
             artifacts.append(GeneratedArtifact(

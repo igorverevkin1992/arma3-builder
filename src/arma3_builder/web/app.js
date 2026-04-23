@@ -6,6 +6,21 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 let lastPlan = null;
 let currentMissionIdx = 0;
 
+// Stable session id so concurrent browser tabs / users get isolated
+// per-session diff state on the backend (see _session_runs in routes.py).
+function getSessionId() {
+    try {
+        let sid = localStorage.getItem("a3b_session");
+        if (!sid) {
+            sid = "s_" + Math.random().toString(36).slice(2, 12);
+            localStorage.setItem("a3b_session", sid);
+        }
+        return sid;
+    } catch (e) {
+        return "anon";
+    }
+}
+
 // -------- Tab switching -------------------------------------------------
 $$(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
@@ -120,7 +135,10 @@ async function generate() {
     const li = addProgress("Streaming…", "running");
     const resp = await fetch("/generate/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            "X-Session-Id": getSessionId(),
+        },
         body: JSON.stringify(body),
     });
     const reader = resp.body.getReader();
@@ -283,9 +301,17 @@ $("#refine").addEventListener("click", async () => {
     addProgress(`refine: ${instr}`, "running");
     const r = await fetch("/refine", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+            "Content-Type": "application/json",
+            "X-Session-Id": getSessionId(),
+        },
         body: JSON.stringify({ plan: lastPlan, instruction: instr }),
     });
+    if (!r.ok) {
+        const txt = await r.text();
+        addProgress("✗ refine failed: " + txt.slice(0, 120), "error");
+        return;
+    }
     const payload = await r.json();
     lastPlan = payload.plan;
     renderResult({

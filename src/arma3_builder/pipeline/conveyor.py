@@ -64,12 +64,18 @@ class Pipeline:
         self._llm = llm or get_llm_client()
         self._retriever = retriever or HybridRetriever()
         # Hydrate RAG from seed data on first boot — agents query it during
-        # generation, so the store must not be empty.
+        # generation, so the store must not be empty. `bootstrap` itself is
+        # idempotent (skips when the store is non-empty), but we wrap it
+        # defensively so a bad seed file can't take down the API process.
         try:
             bootstrap(self._retriever.store)
         except Exception as exc:  # noqa: BLE001
             logger.warning("rag_bootstrap_failed", error=str(exc))
-        self._registry = registry or ClassnameRegistry.from_seed_files()
+        # Cache the registry seed files in raw form; `make_context` then
+        # returns a *fresh* ClassnameRegistry per request so the `unknown`
+        # set is request-scoped and concurrent /generate calls cannot leak
+        # findings into each other.
+        self._registry_template = registry or ClassnameRegistry.from_seed_files()
         self.orchestrator = OrchestratorAgent()
         self.narrative = NarrativeAgent()
         self.scripter = ScripterAgent()
@@ -77,10 +83,15 @@ class Pipeline:
         self.qa = QAAgent()
 
     def make_context(self) -> AgentContext:
+        # Per-request registry: the `unknown` set is mutable and gets
+        # cleared via `take_unknowns()`; sharing one across concurrent
+        # requests would race. The known classnames are copied — cheap
+        # because they're a flat dict.
+        registry = ClassnameRegistry(items=dict(self._registry_template.items))
         return AgentContext(
             llm=self._llm,
             retriever=self._retriever,
-            registry=self._registry,
+            registry=registry,
         )
 
     async def generate(self, prompt: str, *, bus=None) -> GenerationResult:
@@ -115,6 +126,10 @@ class Pipeline:
         ctx: AgentContext | None = None,
         bus=None,
     ) -> GenerationResult:
+        # Deep-copy: ConfigMaster intentionally writes derived fields back
+        # onto the blueprints, but the caller's plan should not be mutated
+        # under their feet (especially across concurrent /refine requests).
+        plan = plan.model_copy(deep=True)
         ctx = ctx or self.make_context()
         if bus:
             await bus.publish("agent_started", agent="config_master")

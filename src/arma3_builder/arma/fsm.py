@@ -24,9 +24,15 @@ def generate_statemachine_sqf(blueprint: MissionBlueprint) -> str:
         "// Auto-generated CBA statemachine for mission FSM.",
         "// Uses CBA_statemachine to avoid scheduler busy loops.",
         "",
-        f'private _sm = ["{fsm.initial}"] call CBA_statemachine_fnc_create;',
-        "",
     ]
+    # Run global init BEFORE the SM is created so transition predicates can
+    # safely reference the namespace variables we set up here.
+    for stmt in fsm.on_enter_global:
+        out.append(f"{stmt};")
+    if fsm.on_enter_global:
+        out.append("")
+    out.append(f'private _sm = ["{fsm.initial}"] call CBA_statemachine_fnc_create;')
+    out.append("")
 
     # 1. Register states.
     for state in fsm.states:

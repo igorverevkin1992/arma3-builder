@@ -18,7 +18,14 @@ def generate_init_sqf(blueprint: MissionBlueprint) -> str:
 
 
 def generate_init_server(blueprint: MissionBlueprint) -> str:
-    """Server-only logic: dyn-sim, AI spawn, FSM start."""
+    """Server-only logic: dyn-sim, AI spawn, task registration, FSM start.
+
+    initFsm and registerTasks are registered in CfgFunctions WITHOUT preInit,
+    so we own the lifecycle here. Calling them from one place (server only)
+    avoids the double-init bug that the earlier preInit + manual-call combo
+    had. Tasks are created on the server and BIS_fnc_taskCreate broadcasts
+    them automatically.
+    """
     units_count = len(blueprint.units)
     addons = ", ".join(f'"{a}"' for a in blueprint.addons) or '"a3"'
 
@@ -36,10 +43,14 @@ def generate_init_server(blueprint: MissionBlueprint) -> str:
         "// Garbage collector — registered as a CBA per-frame handler in fn_repairLoop.\n"
         "[] call A3B_fnc_repairLoop;\n"
         "\n"
-        f"diag_log format [\"[A3B] mission started, %1 placed units, addons: {addons}\", {units_count}];\n"
+        "// Register tasks BEFORE the FSM starts changing their state.\n"
+        "[] call A3B_fnc_registerTasks;\n"
         "\n"
-        "// FSM is started here so it owns server-authoritative state.\n"
+        "// FSM is started here so it owns server-authoritative state. The\n"
+        "// state machine is stored in missionNamespace under \"A3B_stateMachine\".\n"
         "[] call A3B_fnc_initFsm;\n"
+        "\n"
+        f"diag_log format [\"[A3B] mission started, %1 placed units, addons: {addons}\", {units_count}];\n"
     )
 
 

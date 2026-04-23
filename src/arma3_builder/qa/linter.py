@@ -42,9 +42,12 @@ class SqfLinter:
     # -------------------------------------------------------------- internal
 
     def _run(self, args: list[str], *, display_name: str) -> list[QAFinding]:
+        # Don't pass -r (recursive) — every call here is a single file. The
+        # earlier `-r` was a leftover from a CLI that walked directories and
+        # confused some sqflint versions into ignoring the file argument.
         try:
             proc = subprocess.run(
-                [self.binary, "-r", *args],
+                [self.binary, *args],
                 capture_output=True,
                 text=True,
                 timeout=15,

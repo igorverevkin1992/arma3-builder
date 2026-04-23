@@ -3,24 +3,38 @@
 Arma's KB (knowledge base) system is what enables NPC → player radio / speech
 with lipsync. The minimal producible unit is:
 
-  * ``sentences.bikb`` – per-topic sentence bank
-  * ``CfgSentences`` – registers the topic and its sentences
-  * SQF: ``unit kbAddTopic ["topicName","sentences.bikb","CfgSentences"]``
-         ``unit kbTell [player, "topicName", "sentenceId"]``
+  * ``sentences.bikb``  – KB topic + sentence bank
+  * ``CfgSentences``    – registers the topic class (must be `#include`-d
+                          from ``description.ext`` — Config Master does this).
+  * SQF: ``unit kbAddTopic [topicName, "sentences.bikb", "CfgSentences\\<topicName>"]``
+         ``unit kbTell    [target, topicName, sentenceId]``
 
-For designers we keep it simple: one topic per mission.
+For designers we keep it simple: one topic per mission. The driver SQF must
+run AFTER ``A3B_fnc_initFsm`` has populated ``A3B_stateMachine``, so we wait
+for the namespace variable before binding sentences to FSM transitions.
 """
 from __future__ import annotations
 
 from ..protocols import MissionBlueprint
 
 
+def _topic_name(blueprint: MissionBlueprint) -> str:
+    return f"A3B_topic_{blueprint.mission_id or 'mission'}"
+
+
 def generate_sentences_bikb(blueprint: MissionBlueprint) -> str:
+    """Return the contents of ``sentences.bikb``.
+
+    Arma's KB parser expects raw `class <topic>` blocks at the top of the
+    file (no outer wrapper). Each sentence carries `text`, an empty `speech[]`
+    array (placeholder for VO files) and an empty `Arguments` block — that
+    is the minimum schema the engine accepts.
+    """
     if not blueprint.dialogue:
         return "// No dialogue lines for this mission.\n"
-    topic_name = f"A3B_topic_{blueprint.mission_id or 'mission'}"
+    topic = _topic_name(blueprint)
     lines: list[str] = [
-        f"class {topic_name}",
+        f"class {topic}",
         "{",
         f"    // Auto-generated from blueprint.dialogue ({len(blueprint.dialogue)} lines).",
     ]
@@ -38,42 +52,61 @@ def generate_sentences_bikb(blueprint: MissionBlueprint) -> str:
 
 
 def generate_cfg_sentences(blueprint: MissionBlueprint) -> str:
+    """Return the ``CfgSentences`` fragment that description.ext includes.
+
+    We declare the topic *class header* and forward-declare each sentence.
+    The actual bodies live in ``sentences.bikb`` — Arma resolves them by
+    name when ``kbAddTopic`` is called.
+    """
     if not blueprint.dialogue:
         return "class CfgSentences {};\n"
-    topic_name = f"A3B_topic_{blueprint.mission_id or 'mission'}"
+    topic = _topic_name(blueprint)
     return (
         "class CfgSentences\n"
         "{\n"
-        f"    class {topic_name}\n"
+        f"    class {topic}\n"
         "    {\n"
-        + "\n".join(
-            f'        class {d.id};' for d in blueprint.dialogue
-        )
+        + "\n".join(f'        class {d.id};' for d in blueprint.dialogue)
         + "\n    };\n"
           "};\n"
     )
 
 
 def generate_dialog_driver_sqf(blueprint: MissionBlueprint) -> str:
-    """Register the topic on the speaker unit and bind it to FSM states."""
+    """Bind dialogue lines to FSM state transitions.
+
+    The driver:
+      1. Waits for ``A3B_stateMachine`` (set by ``fn_initFsm``) — without
+         this guard, the addStateScript calls would target objNull.
+      2. Calls ``kbAddTopic`` with the *fully-qualified* CfgSentences path
+         (``"CfgSentences\\<topic>"``) — passing only ``"CfgSentences"``
+         silently fails because the engine cannot resolve the class.
+      3. Registers each line as an `enter` script-hook of its trigger state,
+         or fires it immediately if no trigger is set.
+    """
     if not blueprint.dialogue:
         return "// No dialogue configured.\n"
-    topic_name = f"A3B_topic_{blueprint.mission_id or 'mission'}"
+    topic = _topic_name(blueprint)
     out: list[str] = [
         "// fn_playDialog.sqf — binds radio lines to FSM state transitions.",
         "params [[\"_speaker\", objNull, [objNull]]];",
         "if (isNull _speaker) exitWith {};",
-        f'_speaker kbAddTopic ["{topic_name}", "sentences.bikb", "CfgSentences", ""];',
+        "",
+        "// Wait for the FSM to be ready (set by A3B_fnc_initFsm).",
+        "waitUntil { !isNil { missionNamespace getVariable \"A3B_stateMachine\" } };",
+        "private _sm = missionNamespace getVariable \"A3B_stateMachine\";",
+        "",
+        "// Register the KB topic on the speaker. Fully-qualified config path.",
+        f'_speaker kbAddTopic ["{topic}", "sentences.bikb", "CfgSentences\\\\{topic}", ""];',
         "",
     ]
     for d in blueprint.dialogue:
         if d.trigger_state:
             out.append(
-                f'[missionNamespace getVariable ["A3B_stateMachine", objNull], '
-                f'"{d.trigger_state}", {{ '
-                f'_speaker kbTell [player, "{topic_name}", "{d.id}"] '
-                f'}}, "enter"] call CBA_statemachine_fnc_addStateScript;'
+                f'[_sm, "{d.trigger_state}", '
+                f'{{ _speaker kbTell [player, "{topic}", "{d.id}"] }}, '
+                f'"enter"] call CBA_statemachine_fnc_addStateScript;'
             )
         else:
-            out.append(f'_speaker kbTell [player, "{topic_name}", "{d.id}"];')
+            out.append(f'_speaker kbTell [player, "{topic}", "{d.id}"];')
     return "\n".join(out) + "\n"

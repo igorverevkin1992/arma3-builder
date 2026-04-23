@@ -120,23 +120,42 @@ def _mission_id(p: dict) -> str:
 
 
 def _convoy(p: dict) -> MissionBlueprint:
+    # Predicates target the named enemy `e1` (the lead AI in `_enemy_group`)
+    # so the FSM operates on entities the SQM actually contains. No
+    # never-set namespace sentinels.
     fsm = FsmGraph(
         initial="depart",
+        on_enter_global=[
+            "A3B_enemyLead = e1",
+            "A3B_lzPos = getMarkerPos \"a3b_lz\"",
+        ],
         states=[
-            FsmState(id="depart", label="Depart FOB",
-                     on_enter=['["task_move","ASSIGNED"] call BIS_fnc_taskSetState'],
-                     transitions=[FsmTransition(
-                         to="ambush", kind=TransitionKind.TRIGGER,
-                         condition="(player distance (missionNamespace getVariable ['A3B_ambushPos',[0,0,0]])) < 200",
-                     )]),
-            FsmState(id="ambush", label="Ambush",
-                     transitions=[
-                         FsmTransition(to="extract", kind=TransitionKind.TRIGGER,
-                                       condition="({alive _x} count (units A3B_enemyGrp)) == 0"),
-                         FsmTransition(to="failure", kind=TransitionKind.TRIGGER,
-                                       condition="({alive _x} count units (group player)) == 0"),
-                     ]),
-            FsmState(id="extract", label="Extract", is_terminal=True, end_type="end1"),
+            FsmState(
+                id="depart", label="Depart FOB",
+                on_enter=['["task_move","ASSIGNED"] call BIS_fnc_taskSetState'],
+                transitions=[FsmTransition(
+                    to="ambush", kind=TransitionKind.TRIGGER,
+                    condition="(player distance A3B_enemyLead) < 250",
+                )],
+            ),
+            FsmState(
+                id="ambush", label="Ambush",
+                transitions=[
+                    FsmTransition(
+                        to="extract", kind=TransitionKind.TRIGGER,
+                        condition='({alive _x && {side _x == east}} count allUnits) == 0',
+                    ),
+                    FsmTransition(
+                        to="failure", kind=TransitionKind.TRIGGER,
+                        condition="({alive _x} count units (group player)) == 0",
+                    ),
+                ],
+            ),
+            FsmState(
+                id="extract", label="Extract",
+                on_enter=['["task_move","SUCCEEDED"] call BIS_fnc_taskSetState'],
+                is_terminal=True, end_type="end1",
+            ),
             FsmState(id="failure", label="Convoy lost", is_terminal=True, end_type="loser"),
         ],
     )
@@ -167,21 +186,31 @@ def _convoy(p: dict) -> MissionBlueprint:
 
 
 def _defend(p: dict) -> MissionBlueprint:
+    # "boss" is the lead enemy from the spawn group (e1). Victory = no enemies
+    # alive; failure = no friendlies alive. Both predicates only reference
+    # entities the SQM definitely contains.
     fsm = FsmGraph(
         initial="prepare",
+        on_enter_global=["A3B_waveBoss = e1"],
         states=[
             FsmState(id="prepare", label="Prepare defence",
                      transitions=[FsmTransition(
                          to="hold", kind=TransitionKind.TIMER, condition="60",
                          description="Hold positions after 60s",
                      )]),
-            FsmState(id="hold", label="Hold the line",
-                     transitions=[
-                         FsmTransition(to="victory", kind=TransitionKind.TRIGGER,
-                                       condition="!alive (missionNamespace getVariable ['A3B_waveBoss', objNull])"),
-                         FsmTransition(to="failure", kind=TransitionKind.TRIGGER,
-                                       condition="({alive _x} count units (group player)) == 0"),
-                     ]),
+            FsmState(
+                id="hold", label="Hold the line",
+                transitions=[
+                    FsmTransition(
+                        to="victory", kind=TransitionKind.TRIGGER,
+                        condition='({alive _x && {side _x == east}} count allUnits) == 0',
+                    ),
+                    FsmTransition(
+                        to="failure", kind=TransitionKind.TRIGGER,
+                        condition="({alive _x} count units (group player)) == 0",
+                    ),
+                ],
+            ),
             FsmState(id="victory", label="Position held", is_terminal=True, end_type="end1"),
             FsmState(id="failure", label="Overrun", is_terminal=True, end_type="loser"),
         ],
@@ -203,25 +232,32 @@ def _defend(p: dict) -> MissionBlueprint:
 
 
 def _sabotage(p: dict) -> MissionBlueprint:
+    # The "target" is the lead enemy unit (e1) for the demo. plantDone is
+    # set by the player via an addAction the SQM doesn't yet generate;
+    # for now the trigger fires when the target is killed.
     fsm = FsmGraph(
         initial="infiltrate",
+        on_enter_global=[
+            "A3B_target = e1",
+            "A3B_lzPos = position p1",
+        ],
         states=[
             FsmState(id="infiltrate", label="Infiltrate",
                      transitions=[FsmTransition(
                          to="plant", kind=TransitionKind.TRIGGER,
-                         condition="(player distance (missionNamespace getVariable ['A3B_target', objNull])) < 10",
+                         condition="(player distance A3B_target) < 50",
                      )]),
             FsmState(id="plant", label="Plant charges",
                      transitions=[FsmTransition(
                          to="exfil", kind=TransitionKind.TRIGGER,
-                         condition="missionNamespace getVariable ['A3B_plantDone', false]",
+                         condition="!alive A3B_target",
                      )]),
             FsmState(id="exfil", label="Exfiltrate",
                      transitions=[FsmTransition(
-                         to="end1", kind=TransitionKind.TRIGGER,
-                         condition="(player distance (missionNamespace getVariable ['A3B_lzPos',[0,0,0]])) < 25",
+                         to="win", kind=TransitionKind.TRIGGER,
+                         condition="(player distance A3B_lzPos) < 50",
                      )]),
-            FsmState(id="end1", label="Target destroyed", is_terminal=True, end_type="end1"),
+            FsmState(id="win", label="Target destroyed", is_terminal=True, end_type="end1"),
         ],
     )
     return MissionBlueprint(
@@ -236,18 +272,22 @@ def _sabotage(p: dict) -> MissionBlueprint:
 
 
 def _csar(p: dict) -> MissionBlueprint:
+    # The "pilot" is e1 in the demo (an enemy until the designer reassigns
+    # them to civilian). Mission ends once players reach within 5m AND all
+    # immediate enemies are eliminated.
     fsm = FsmGraph(
         initial="locate",
+        on_enter_global=["A3B_pilot = e1"],
         states=[
             FsmState(id="locate", label="Locate pilot",
                      transitions=[FsmTransition(
                          to="secure", kind=TransitionKind.TRIGGER,
-                         condition="(player distance (missionNamespace getVariable ['A3B_pilot', objNull])) < 10",
+                         condition="(player distance A3B_pilot) < 50",
                      )]),
             FsmState(id="secure", label="Secure LZ",
                      transitions=[FsmTransition(
                          to="win", kind=TransitionKind.TRIGGER,
-                         condition="missionNamespace getVariable ['A3B_pilotSafe', false]",
+                         condition='({alive _x && {side _x == east}} count allUnits) <= 1',
                      )]),
             FsmState(id="win", label="Pilot recovered", is_terminal=True, end_type="end1"),
         ],
@@ -266,16 +306,17 @@ def _csar(p: dict) -> MissionBlueprint:
 def _hvt(p: dict) -> MissionBlueprint:
     fsm = FsmGraph(
         initial="approach",
+        on_enter_global=["A3B_hvt = e1"],
         states=[
             FsmState(id="approach", label="Approach compound",
                      transitions=[FsmTransition(
                          to="capture", kind=TransitionKind.TRIGGER,
-                         condition="(player distance (missionNamespace getVariable ['A3B_hvtPos',[0,0,0]])) < 50",
+                         condition="(player distance A3B_hvt) < 30",
                      )]),
             FsmState(id="capture", label="Capture HVT",
                      transitions=[FsmTransition(
                          to="win", kind=TransitionKind.TRIGGER,
-                         condition="missionNamespace getVariable ['A3B_hvtCaptured', false]",
+                         condition="!alive A3B_hvt || {captive A3B_hvt}",
                      )]),
             FsmState(id="win", label="HVT captured", is_terminal=True, end_type="end1"),
         ],
@@ -294,6 +335,10 @@ def _hvt(p: dict) -> MissionBlueprint:
 def _recon(p: dict) -> MissionBlueprint:
     fsm = FsmGraph(
         initial="insert",
+        on_enter_global=[
+            "A3B_target = e1",
+            "A3B_lzPos = position p1",
+        ],
         states=[
             FsmState(id="insert", label="Insert",
                      transitions=[FsmTransition(
@@ -302,12 +347,12 @@ def _recon(p: dict) -> MissionBlueprint:
             FsmState(id="observe", label="Observe & report",
                      transitions=[FsmTransition(
                          to="exfil", kind=TransitionKind.TRIGGER,
-                         condition="missionNamespace getVariable ['A3B_reconDone', false]",
+                         condition="(player distance A3B_target) < 200 && {alive A3B_target}",
                      )]),
             FsmState(id="exfil", label="Exfiltrate",
                      transitions=[FsmTransition(
                          to="win", kind=TransitionKind.TRIGGER,
-                         condition="(player distance (missionNamespace getVariable ['A3B_lzPos',[0,0,0]])) < 25",
+                         condition="(player distance A3B_lzPos) > 600",
                      )]),
             FsmState(id="win", label="Intel delivered", is_terminal=True, end_type="end1"),
         ],

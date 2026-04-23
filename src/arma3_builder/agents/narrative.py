@@ -58,10 +58,16 @@ class NarrativeAgent(Agent):
         self, mission: MissionBrief, brief: CampaignBrief, ctx: AgentContext,
         *, index: int = 0,
     ) -> MissionBlueprint:
-        # Choose a deterministic FSM matching the canonical pattern from the TZ:
-        # Insertion -> Movement -> Engagement -> Extraction.
+        # Insertion -> Movement -> Engagement -> Extraction. Predicates use
+        # entities the SQM definitely contains (named units p1, e1) and a
+        # short timer for the "insertion finished" gate, so the mission is
+        # actually playable end-to-end without external setup.
         fsm = FsmGraph(
             initial="insertion",
+            on_enter_global=[
+                "A3B_target = e1",
+                "A3B_lzPos = position p1",
+            ],
             states=[
                 FsmState(
                     id="insertion",
@@ -72,9 +78,9 @@ class NarrativeAgent(Agent):
                     transitions=[
                         FsmTransition(
                             to="movement",
-                            kind=TransitionKind.TRIGGER,
-                            condition="!isNil 'A3B_insertionDone' && {A3B_insertionDone}",
-                            description="Players past insertion zone",
+                            kind=TransitionKind.TIMER,
+                            condition="20",
+                            description="Insertion considered complete after 20s",
                         ),
                     ],
                 ),
@@ -87,8 +93,8 @@ class NarrativeAgent(Agent):
                     transitions=[
                         FsmTransition(
                             to="engagement",
-                            kind=TransitionKind.OBJECTIVE,
-                            condition="(missionNamespace getVariable ['A3B_contact', false])",
+                            kind=TransitionKind.TRIGGER,
+                            condition="(player distance A3B_target) < 250",
                         ),
                     ],
                 ),
@@ -102,7 +108,7 @@ class NarrativeAgent(Agent):
                         FsmTransition(
                             to="extraction",
                             kind=TransitionKind.TRIGGER,
-                            condition="!alive (missionNamespace getVariable ['A3B_target', objNull])",
+                            condition='({alive _x && {side _x == east}} count allUnits) == 0',
                         ),
                         FsmTransition(
                             to="failure",
