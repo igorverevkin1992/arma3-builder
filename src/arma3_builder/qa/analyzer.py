@@ -201,10 +201,19 @@ def build_qa_report(
     iteration: int,
     use_sqflint: bool = True,
     unknown_classnames: list[str] | None = None,
+    include_pacing: bool = True,
+    include_playtest: bool = True,
 ) -> QAReport:
     findings = analyze_artifacts(artifacts, use_sqflint=use_sqflint)
     if plan is not None:
         findings.extend(validate_campaign_endstates(plan, artifacts))
+        if include_pacing:
+            # Imported here to avoid a circular dep at module load time.
+            from .pacing import pacing_findings
+            findings.extend(pacing_findings(plan))
+        if include_playtest:
+            from .playtester import playtest_findings
+            findings.extend(playtest_findings(plan))
     if unknown_classnames:
         findings.extend(validate_unknown_classnames(unknown_classnames))
     return QAReport(findings=findings, iteration=iteration)

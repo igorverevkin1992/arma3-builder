@@ -88,10 +88,11 @@ def test_b3_dialog_waits_for_statemachine(mission_blueprint):
 
 
 def test_b4_initfsm_not_preinit(mission_blueprint):
+    import re
     text = generate_mission_description_ext(mission_blueprint)
     # initFsm and registerTasks must not be preInit anymore — they're owned
     # explicitly by initServer.sqf to avoid double-creation.
-    assert "class initFsm        { };" in text or "class initFsm{ };" in text or "class initFsm        {" in text
+    assert re.search(r"class\s+initFsm\s*\{[^}]*}", text)
     assert "preInit = 1" not in text
 
 

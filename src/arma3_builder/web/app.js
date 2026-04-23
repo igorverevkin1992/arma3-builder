@@ -5,6 +5,181 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 let lastPlan = null;
 let currentMissionIdx = 0;
+let lastPayload = null;          // last generate/stream done payload
+
+// ------------------------------ Wizard state ------------------------------
+
+const wizard = {
+    step: 0,
+    data: {
+        scope: null,             // "single" | "campaign"
+        templateId: null,
+        map: "Tanoa",
+        side: "WEST",
+        enemySide: "EAST",
+        playerCount: 4,
+        timeOfDay: "06:30",
+        weather: "overcast",
+        title: "Untitled",
+    },
+};
+
+function renderWizardStep() {
+    const panel = $("#wizard-panel");
+    const steps = $$("#wizard-steps li");
+    steps.forEach((li, i) => {
+        li.classList.remove("active", "done");
+        if (i === wizard.step) li.classList.add("active");
+        if (i < wizard.step) li.classList.add("done");
+    });
+
+    const stepRenderers = [stepScope, stepTheatre, stepTeam, stepReview];
+    panel.innerHTML = "";
+    stepRenderers[wizard.step](panel);
+    $("#wizard-back").disabled = wizard.step === 0;
+    $("#wizard-next").textContent = wizard.step === 3 ? "Generate" : "Next →";
+}
+
+function stepScope(panel) {
+    panel.innerHTML = `
+        <label>What are you building?</label>
+        <div class="option ${wizard.data.scope === "single" ? "selected" : ""}" data-scope="single">
+            <div class="title">Single mission</div>
+            <div class="desc">One standalone mission from a template.</div>
+        </div>
+        <div class="option ${wizard.data.scope === "campaign" ? "selected" : ""}" data-scope="campaign">
+            <div class="title">Campaign</div>
+            <div class="desc">Multiple missions with a shared arc.</div>
+        </div>
+        <label>Pick a starting template:</label>
+        <select id="wiz-template"></select>
+    `;
+    // Inject templates from the cache populated at boot.
+    const sel = $("#wiz-template");
+    (wizard.templates || []).forEach((t) => {
+        const o = document.createElement("option");
+        o.value = t.id;
+        o.textContent = `${t.label} — ${t.summary}`;
+        sel.appendChild(o);
+    });
+    if (wizard.data.templateId) sel.value = wizard.data.templateId;
+    sel.addEventListener("change", () => { wizard.data.templateId = sel.value; });
+    $$("#wizard-panel .option").forEach((el) => {
+        el.addEventListener("click", () => {
+            wizard.data.scope = el.dataset.scope;
+            renderWizardStep();
+        });
+    });
+}
+
+function stepTheatre(panel) {
+    panel.innerHTML = `
+        <label>Map</label>
+        <select id="wiz-map">
+          ${["Tanoa", "Altis", "Stratis", "Malden", "Enoch", "VR"].map(
+            (m) => `<option ${m === wizard.data.map ? "selected" : ""}>${m}</option>`
+          ).join("")}
+        </select>
+        <label>Time of day</label>
+        <input id="wiz-tod" value="${wizard.data.timeOfDay}">
+        <label>Weather</label>
+        <select id="wiz-weather">
+          ${["clear", "overcast", "rain", "storm"].map(
+            (w) => `<option ${w === wizard.data.weather ? "selected" : ""}>${w}</option>`
+          ).join("")}
+        </select>
+    `;
+    $("#wiz-map").addEventListener("change", (e) => wizard.data.map = e.target.value);
+    $("#wiz-tod").addEventListener("change", (e) => wizard.data.timeOfDay = e.target.value);
+    $("#wiz-weather").addEventListener("change", (e) => wizard.data.weather = e.target.value);
+}
+
+function stepTeam(panel) {
+    panel.innerHTML = `
+        <label>Mission title</label>
+        <input id="wiz-title" value="${wizard.data.title}">
+        <label>Player slots (coop)</label>
+        <input id="wiz-count" type="number" min="1" max="16" value="${wizard.data.playerCount}">
+        <label>Player side</label>
+        <select id="wiz-side">
+          ${["WEST", "EAST", "INDEPENDENT"].map(
+            (s) => `<option ${s === wizard.data.side ? "selected" : ""}>${s}</option>`
+          ).join("")}
+        </select>
+        <label>Enemy side</label>
+        <select id="wiz-enemy">
+          ${["WEST", "EAST", "INDEPENDENT", "CIVILIAN"].map(
+            (s) => `<option ${s === wizard.data.enemySide ? "selected" : ""}>${s}</option>`
+          ).join("")}
+        </select>
+    `;
+    $("#wiz-title").addEventListener("input", (e) => wizard.data.title = e.target.value);
+    $("#wiz-count").addEventListener("change", (e) => wizard.data.playerCount = +e.target.value);
+    $("#wiz-side").addEventListener("change", (e) => wizard.data.side = e.target.value);
+    $("#wiz-enemy").addEventListener("change", (e) => wizard.data.enemySide = e.target.value);
+}
+
+function stepReview(panel) {
+    const d = wizard.data;
+    panel.innerHTML = `
+        <div class="option">
+            <div class="title">${escapeHtml(d.title)} — ${escapeHtml(d.templateId || "?")}</div>
+            <div class="desc">
+                ${escapeHtml(d.map)} · ${escapeHtml(d.side)} vs ${escapeHtml(d.enemySide)}
+                · ${d.playerCount} players · ${escapeHtml(d.timeOfDay)} · ${escapeHtml(d.weather)}
+            </div>
+        </div>
+        <p class="muted small">Click <b>Generate</b> below to build the mission.
+           You can follow it up in the Refine panel afterwards.</p>
+    `;
+}
+
+$("#wizard-back").addEventListener("click", () => {
+    if (wizard.step > 0) { wizard.step--; renderWizardStep(); }
+});
+$("#wizard-next").addEventListener("click", async () => {
+    if (wizard.step < 3) {
+        wizard.step++;
+        renderWizardStep();
+    } else {
+        await generateFromWizard();
+    }
+});
+
+async function generateFromWizard() {
+    if (!wizard.data.templateId) {
+        alert("Please pick a template in step 1");
+        return;
+    }
+    // Instantiate the template with wizard params, then wrap into a brief.
+    const params = {
+        title: wizard.data.title,
+        map: wizard.data.map,
+        side: wizard.data.side,
+        enemy_side: wizard.data.enemySide,
+        player_count: wizard.data.playerCount,
+        time_of_day: wizard.data.timeOfDay,
+        weather: wizard.data.weather,
+    };
+    const tplResp = await fetch(`/templates/${wizard.data.templateId}/instantiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Session-Id": getSessionId() },
+        body: JSON.stringify(params),
+    });
+    const tpl = await tplResp.json();
+    const body = {
+        brief: {
+            name: wizard.data.title,
+            author: "designer",
+            overview: tpl.blueprint.brief.summary,
+            mods: ["cba_main"],
+            factions: { WEST: "BLU_F", EAST: "OPF_F" },
+            missions: [tpl.blueprint.brief],
+        },
+    };
+    clearProgress();
+    await streamGeneration(body);
+}
 
 // Stable session id so concurrent browser tabs / users get isolated
 // per-session diff state on the backend (see _session_runs in routes.py).
@@ -32,22 +207,6 @@ $$(".tab").forEach((tab) => {
 });
 
 // -------- Templates -----------------------------------------------------
-async function loadTemplates() {
-    const r = await fetch("/templates");
-    const templates = await r.json();
-    const sel = $("#template-id");
-    sel.innerHTML = "";
-    templates.forEach((t) => {
-        const o = document.createElement("option");
-        o.value = t.id;
-        o.textContent = `${t.label} — ${t.summary}`;
-        o.dataset.tmpl = JSON.stringify(t);
-        sel.appendChild(o);
-    });
-    sel.addEventListener("change", renderTemplateParams);
-    renderTemplateParams();
-}
-
 function renderTemplateParams() {
     const sel = $("#template-id");
     if (!sel.options[sel.selectedIndex]) return;
@@ -103,6 +262,11 @@ async function generate() {
     clearProgress();
     const activeTab = document.querySelector(".tab.active").dataset.tab;
     const body = {};
+    if (activeTab === "wizard") {
+        // Wizard has its own button; Generate button is still allowed for
+        // power users who wizard-then-Generate without hitting Next.
+        return generateFromWizard();
+    }
     if (activeTab === "prompt") {
         body.prompt = $("#prompt").value.trim();
         if (!body.prompt) return alert("Please type a prompt");
@@ -115,7 +279,6 @@ async function generate() {
             body: JSON.stringify(params),
         });
         const tpl = await tplResp.json();
-        // Wrap blueprint into a minimal one-mission brief and submit.
         body.brief = {
             name: params.title || tpl.blueprint.brief.title,
             author: "designer",
@@ -131,7 +294,10 @@ async function generate() {
             return alert("Invalid brief JSON: " + e.message);
         }
     }
+    await streamGeneration(body);
+}
 
+async function streamGeneration(body) {
     const li = addProgress("Streaming…", "running");
     const resp = await fetch("/generate/stream", {
         method: "POST",
@@ -187,12 +353,17 @@ function renderResult(payload) {
     addProgress(`🎉 output: ${payload.output_path}`, "done");
     $("#result").classList.remove("hidden");
     lastPlan = payload.plan;
+    lastPayload = payload;
 
     // Score grid
     const s = payload.score || {};
     $("#score").innerHTML = Object.entries(s).map(([k, v]) => `
         <div class="metric"><div class="val">${v}</div><div class="label">${k}</div></div>
     `).join("");
+
+    renderUsage(payload.usage);
+    renderPacing(payload.pacing);
+    renderPlaytest(payload.playtest);
 
     // Missions
     $("#missions").innerHTML = (payload.plan.blueprints || []).map((bp, i) => `
@@ -227,6 +398,82 @@ function renderResult(payload) {
     // we just render the error/warning counts.
     $("#qa-summary").textContent =
         ` · ${payload.errors || 0} errors, ${payload.warnings || 0} warnings`;
+}
+
+// -------- Usage / cost / pacing / playtest ------------------------------
+
+function renderUsage(usage) {
+    const el = $("#usage");
+    if (!usage || !el) return;
+    const cells = [
+        ["$" + (usage.total_cost_usd || 0).toFixed(4), "cost"],
+        [usage.calls || 0, "LLM calls"],
+        [(usage.total_input_tokens || 0) + " / " + (usage.total_output_tokens || 0), "in / out tokens"],
+        [(usage.total_latency_ms || 0) + " ms", "latency"],
+    ];
+    el.innerHTML = cells.map(([v, k]) =>
+        `<div class="cell"><div class="v">${escapeHtml(String(v))}</div><div class="k">${k}</div></div>`
+    ).join("");
+    $("#usage-summary").textContent = usage.calls
+        ? ` · ${usage.calls} calls across ${Object.keys(usage.by_role || {}).length} agents`
+        : "";
+}
+
+function renderPacing(pacing) {
+    const el = $("#pacing");
+    if (!el) return;
+    el.innerHTML = "";
+    if (!pacing || !pacing.missions) return;
+    for (const m of pacing.missions) {
+        const total = m.total_seconds || 0;
+        const row = document.createElement("div");
+        row.className = "pacing-row";
+        const mins = Math.round(total / 60);
+        const eng = Math.round((m.engagement_ratio || 0) * 100);
+        row.innerHTML = `
+            <div class="pacing-label">
+                <span>${escapeHtml(m.mission_id || "mission")}</span>
+                <span>~${mins} min · ${eng}% combat</span>
+            </div>
+            <div class="pacing-bar">
+                ${(m.timeline || []).map((seg) => {
+                    const pct = total > 0 ? (seg.seconds / total * 100).toFixed(2) : 0;
+                    return `<div class="pacing-seg" style="width:${pct}%"
+                                 data-kind="${escapeHtml(seg.kind)}">
+                        <span class="tip">${escapeHtml(seg.label)} · ${seg.seconds}s · ${escapeHtml(seg.kind)}</span>
+                    </div>`;
+                }).join("")}
+            </div>
+        `;
+        el.appendChild(row);
+    }
+}
+
+function renderPlaytest(playtest) {
+    const el = $("#playtest");
+    if (!el) return;
+    el.innerHTML = "";
+    if (!playtest || !playtest.length) {
+        el.innerHTML = `<li class="muted">No simulated-playthrough findings.</li>`;
+        return;
+    }
+    const findings = [];
+    for (const report of playtest) {
+        for (const f of (report.findings || [])) {
+            findings.push(f);
+        }
+    }
+    if (!findings.length) {
+        el.innerHTML = `<li>✓ All FSMs are reachable and terminal-convergent.</li>`;
+        return;
+    }
+    el.innerHTML = findings.map((f) => `
+        <li class="${escapeHtml(f.severity)}">
+            <code>${escapeHtml(f.code)}</code>
+            ${escapeHtml(f.message)}
+            ${f.suggestion ? `<div class="muted small">→ ${escapeHtml(f.suggestion)}</div>` : ""}
+        </li>
+    `).join("");
 }
 
 // -------- FSM canvas drawing --------------------------------------------
@@ -385,4 +632,29 @@ window.copyText = function (el) {
 };
 
 $("#generate").addEventListener("click", generate);
-loadTemplates();
+
+// Boot: fetch templates once; populate the wizard *and* the classic
+// "Template" tab dropdown; render the wizard's first step.
+(async function boot() {
+    const r = await fetch("/templates");
+    const templates = await r.json();
+    wizard.templates = templates;
+    wizard.data.templateId = templates[0] ? templates[0].id : null;
+    populateTemplateTab(templates);
+    renderWizardStep();
+})();
+
+function populateTemplateTab(templates) {
+    const sel = $("#template-id");
+    if (!sel) return;
+    sel.innerHTML = "";
+    templates.forEach((t) => {
+        const o = document.createElement("option");
+        o.value = t.id;
+        o.textContent = `${t.label} — ${t.summary}`;
+        o.dataset.tmpl = JSON.stringify(t);
+        sel.appendChild(o);
+    });
+    sel.addEventListener("change", renderTemplateParams);
+    renderTemplateParams();
+}

@@ -33,6 +33,7 @@ class NarrativeAgent(Agent):
             user=brief.model_dump_json(),
             json_mode=True,
             temperature=0.5,
+            role=self.role,
         )
         if rsp.provider == "stub":
             return self._fallback_plan(brief, ctx)

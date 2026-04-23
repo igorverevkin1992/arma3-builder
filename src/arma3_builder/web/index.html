@@ -16,12 +16,27 @@
     <section class="panel left">
         <h2>1. Describe</h2>
         <div class="tabs">
-            <button class="tab active" data-tab="prompt">Prompt</button>
+            <button class="tab active" data-tab="wizard">Wizard</button>
+            <button class="tab" data-tab="prompt">Prompt</button>
             <button class="tab" data-tab="template">Template</button>
             <button class="tab" data-tab="brief">Raw brief</button>
         </div>
 
-        <div class="tab-body" data-tab="prompt">
+        <div class="tab-body" data-tab="wizard">
+            <ol id="wizard-steps" class="wizard-steps">
+                <li class="active">1. Scope</li>
+                <li>2. Theatre</li>
+                <li>3. Team</li>
+                <li>4. Review</li>
+            </ol>
+            <div id="wizard-panel"></div>
+            <div class="wizard-nav">
+                <button id="wizard-back" class="secondary">← Back</button>
+                <button id="wizard-next" class="primary">Next →</button>
+            </div>
+        </div>
+
+        <div class="tab-body hidden" data-tab="prompt">
             <textarea id="prompt" rows="6" placeholder="Coop MARSOC raid on Tanoa. Mission 1 — destroy SAM at night. Mission 2 — recover downed pilot."></textarea>
         </div>
 
@@ -46,8 +61,17 @@
             <h3>Quality score</h3>
             <div id="score" class="score-grid"></div>
 
+            <h3>Cost <span id="usage-summary" class="muted"></span></h3>
+            <div id="usage" class="usage-grid"></div>
+
             <h3>QA report <span id="qa-summary" class="muted"></span></h3>
             <ul id="findings" class="findings"></ul>
+
+            <h3>Mission pacing</h3>
+            <div id="pacing"></div>
+
+            <h3>Playthrough simulation</h3>
+            <ul id="playtest" class="findings"></ul>
 
             <h3>Missions</h3>
             <div id="missions"></div>

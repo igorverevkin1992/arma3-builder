@@ -56,14 +56,29 @@ def generate_init_server(blueprint: MissionBlueprint) -> str:
 
 def generate_init_player_local(blueprint: MissionBlueprint) -> str:
     """Client-local UI, gear, JIP-safe addActions, briefing init."""
+    has_loadouts = bool(blueprint.loadouts) or True  # Scripter resolves defaults
+    has_support = bool(blueprint.support_assets)
+
+    loadout_call = (
+        '0 = [] spawn { call (compile preprocessFileLineNumbers "loadoutHook.sqf") };\n'
+        if has_loadouts else ""
+    )
+    support_call = (
+        '[] call A3B_fnc_registerSupportActions;\n'
+        if has_support else ""
+    )
+
     return (
         "// initPlayerLocal.sqf — runs on each client at start AND on JIP.\n"
         "params [\"_player\", \"_didJIP\"];\n"
         "if (isNull _player) then { _player = player };\n"
         "waitUntil { !isNull _player };\n"
         "\n"
-        '// Personal gear / loadout hook (mod-specific, kept side-agnostic by default).\n'
-        "// Add gear assignment here per role.\n"
+        '// Apply role-appropriate gear (reads the lobby `A3B_role` param).\n'
+        f"{loadout_call}"
+        "\n"
+        "// Register on-call support addActions (CAS, arty, medevac, ...).\n"
+        f"{support_call}"
         "\n"
         "// Briefing — must be local, runs again for JIP clients automatically.\n"
         '0 = [] spawn { call (compile preprocessFileLineNumbers "briefing.sqf") };\n'

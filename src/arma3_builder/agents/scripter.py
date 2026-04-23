@@ -19,10 +19,19 @@ from ..arma.dialog import (
     generate_sentences_bikb,
 )
 from ..arma.init_scripts import macros_header
+from ..arma.loadout import (
+    generate_loadout_hook_sqf,
+    generate_loadout_sqf,
+    resolve_loadouts,
+)
 from ..arma.persistence import (
     generate_end_hook_sqf,
     generate_load_progress_sqf,
     generate_save_progress_sqf,
+)
+from ..arma.support import (
+    generate_support_actions_sqf,
+    generate_support_sqf,
 )
 from ..config import get_settings
 from ..protocols import (
@@ -113,6 +122,36 @@ class ScripterAgent(Agent):
                 kind="sqf",
             ),
         ]
+
+        # Loadouts: generate role-based gear application + client hook.
+        loadouts = resolve_loadouts(
+            blueprint.loadouts,
+            faction_hint=("rhsusf_main" if any("rhs" in a for a in blueprint.addons) else "vanilla"),
+        )
+        if loadouts:
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/functions/fn_applyLoadout.sqf",
+                content=generate_loadout_sqf(loadouts),
+                kind="sqf",
+            ))
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/loadoutHook.sqf",
+                content=generate_loadout_hook_sqf(),
+                kind="sqf",
+            ))
+
+        # Support assets (on-call CAS / arty / medevac).
+        if blueprint.support_assets:
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/functions/fn_callSupport.sqf",
+                content=generate_support_sqf(blueprint),
+                kind="sqf",
+            ))
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/functions/fn_registerSupportActions.sqf",
+                content=generate_support_actions_sqf(blueprint),
+                kind="sqf",
+            ))
 
         # Dialog / KB system (only when the blueprint actually has lines).
         if blueprint.dialogue:
@@ -224,6 +263,7 @@ class ScripterAgent(Agent):
                 rsp = await ctx.llm.complete(
                     model=self.model, system=system, user=user,
                     temperature=0.1, max_tokens=4096,
+                    role=f"{self.role}_repair",
                 )
                 new_text = rsp.text.strip()
                 if new_text.startswith("```"):

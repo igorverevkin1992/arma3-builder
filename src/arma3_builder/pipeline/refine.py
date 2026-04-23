@@ -38,6 +38,7 @@ async def refine_plan(
     rsp = await llm.complete(
         model=model, system=REFINE_SYSTEM, user=user,
         json_mode=True, temperature=0.2,
+        role="refine",
     )
     if rsp.provider == "stub":
         # Stub path — apply heuristic refinements by keyword.

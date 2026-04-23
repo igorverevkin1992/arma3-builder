@@ -48,6 +48,7 @@ class OrchestratorAgent(Agent):
             user=f"{_BRIEF_SCHEMA}\n\nDesigner prompt:\n{prompt}",
             json_mode=True,
             temperature=0.3,
+            role=self.role,
         )
         if rsp.provider == "stub":
             return self._fallback_brief(prompt)

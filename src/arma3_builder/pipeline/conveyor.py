@@ -24,13 +24,15 @@ from ..agents import (
 from ..arma.classnames import ClassnameRegistry
 from ..arma.packager import package_campaign
 from ..config import get_settings
-from ..llm import LLMClient, get_llm_client
+from ..llm import LLMClient, get_llm_client, usage_accumulator
 from ..protocols import (
     CampaignBrief,
     CampaignPlan,
     GeneratedArtifact,
     GenerationResult,
 )
+from ..qa.pacing import analyse_campaign
+from ..qa.playtester import playtest_campaign
 from ..rag import HybridRetriever, bootstrap
 from ..utils.logger import get_logger
 
@@ -95,6 +97,10 @@ class Pipeline:
         )
 
     async def generate(self, prompt: str, *, bus=None) -> GenerationResult:
+        # Drain once at the top-level entry so every LLM call in this run
+        # (orchestrator + narrative + scripter repair passes + …) contributes
+        # to the same usage snapshot.
+        usage_accumulator.drain()
         ctx = self.make_context()
         if bus:
             await bus.publish("agent_started", agent="orchestrator")
@@ -107,9 +113,10 @@ class Pipeline:
         if bus:
             await bus.publish("agent_done", agent="narrative",
                               states=sum(len(bp.fsm.states) for bp in plan.blueprints))
-        return await self.generate_from_plan(plan, ctx=ctx, bus=bus)
+        return await self.generate_from_plan(plan, ctx=ctx, bus=bus, _fresh_usage=False)
 
     async def generate_from_brief(self, brief: CampaignBrief, *, bus=None) -> GenerationResult:
+        usage_accumulator.drain()
         ctx = self.make_context()
         if bus:
             await bus.publish("agent_started", agent="narrative")
@@ -117,7 +124,7 @@ class Pipeline:
         if bus:
             await bus.publish("agent_done", agent="narrative",
                               states=sum(len(bp.fsm.states) for bp in plan.blueprints))
-        return await self.generate_from_plan(plan, ctx=ctx, bus=bus)
+        return await self.generate_from_plan(plan, ctx=ctx, bus=bus, _fresh_usage=False)
 
     async def generate_from_plan(
         self,
@@ -125,11 +132,18 @@ class Pipeline:
         *,
         ctx: AgentContext | None = None,
         bus=None,
+        _fresh_usage: bool = True,
     ) -> GenerationResult:
         # Deep-copy: ConfigMaster intentionally writes derived fields back
         # onto the blueprints, but the caller's plan should not be mutated
         # under their feet (especially across concurrent /refine requests).
         plan = plan.model_copy(deep=True)
+        # Drain any usage from unrelated calls, but only when this is the
+        # TOP entry point (i.e. called directly by /refine). Callers that
+        # already drained pass _fresh_usage=False so we don't wipe the
+        # narrative/orchestrator usage we just recorded.
+        if _fresh_usage:
+            usage_accumulator.drain()
         ctx = ctx or self.make_context()
         if bus:
             await bus.publish("agent_started", agent="config_master")
@@ -179,12 +193,21 @@ class Pipeline:
             create_zip=self.config.create_zip,
         )
 
+        # Phase-A analyses. These feed the web UI and the /generate response
+        # but do not block pipeline success — they are advisory layers.
+        pacing = analyse_campaign(plan).to_dict()
+        playtest = [r.to_dict() for r in playtest_campaign(plan)]
+        usage = usage_accumulator.drain().to_dict()
+
         return GenerationResult(
             plan=plan,
             artifacts=artifacts,
             qa=report,
             output_path=str(out_path),
             iterations=iteration,
+            pacing=pacing,
+            playtest=playtest,
+            usage=usage,
         )
 
 

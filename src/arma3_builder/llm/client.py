@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,8 +12,19 @@ import httpx
 
 from ..config import ProviderName, get_settings
 from ..utils.logger import get_logger
+from .usage import (
+    UsageAccumulator,
+    UsageEvent,
+    estimate_cost,
+    estimate_tokens_from_text,
+)
 
 logger = get_logger(__name__)
+
+
+# Module-level accumulator. The pipeline snapshots and resets it per
+# generation — see ``Pipeline.generate_from_plan``.
+usage_accumulator = UsageAccumulator()
 
 
 @dataclass
@@ -57,16 +69,31 @@ class LLMClient:
         temperature: float = 0.2,
         max_tokens: int = 4096,
         json_mode: bool = False,
+        role: str = "unknown",
     ) -> LLMResponse:
+        started = time.monotonic()
         if self.provider == "stub":
-            return await self._stub(model=model, system=system, user=user, json_mode=json_mode)
-        if self.provider == "anthropic":
-            return await self._anthropic(model, system, user, temperature, max_tokens, json_mode)
-        if self.provider == "openai":
-            return await self._openai(model, system, user, temperature, max_tokens, json_mode)
-        if self.provider == "ollama":
-            return await self._ollama(model, system, user, temperature, max_tokens, json_mode)
-        raise ValueError(f"Unsupported provider: {self.provider}")
+            rsp = await self._stub(model=model, system=system, user=user, json_mode=json_mode)
+        elif self.provider == "anthropic":
+            rsp = await self._anthropic(model, system, user, temperature, max_tokens, json_mode)
+        elif self.provider == "openai":
+            rsp = await self._openai(model, system, user, temperature, max_tokens, json_mode)
+        elif self.provider == "ollama":
+            rsp = await self._ollama(model, system, user, temperature, max_tokens, json_mode)
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
+
+        # Best-effort token / cost capture. Raw response shapes vary, so we
+        # probe several known fields and fall back to a length-based estimate.
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        in_tok, out_tok = _extract_tokens(rsp.raw, system + user, rsp.text)
+        cost = estimate_cost(model, in_tok, out_tok)
+        usage_accumulator.record(UsageEvent(
+            provider=self.provider, model=model, role=role,
+            input_tokens=in_tok, output_tokens=out_tok,
+            cost_usd=cost, latency_ms=elapsed_ms,
+        ))
+        return rsp
 
     # ------------------------------------------------------------------ providers
 
@@ -175,6 +202,35 @@ class LLMClient:
         echo = {"system_excerpt": system[:120], "user_excerpt": user[:160], "model": model}
         text = json.dumps(echo) if json_mode else f"[stub:{model}] {user[:80]}"
         return LLMResponse(text=text, raw=echo, model=model, provider="stub")
+
+
+def _extract_tokens(raw: dict, prompt_text: str, reply_text: str) -> tuple[int, int]:
+    """Pull input/output token counts from a raw provider response.
+
+    Each SDK puts the counts in a slightly different spot. When nothing is
+    exposed (Ollama older versions, stub), we estimate from text length so
+    the cost column is never empty.
+    """
+    # Anthropic: raw["usage"] = {"input_tokens": N, "output_tokens": M}
+    u = raw.get("usage") if isinstance(raw, dict) else None
+    if isinstance(u, dict):
+        in_tok = (u.get("input_tokens")
+                  or u.get("prompt_tokens")
+                  or u.get("prompt_eval_count")
+                  or 0)
+        out_tok = (u.get("output_tokens")
+                   or u.get("completion_tokens")
+                   or u.get("eval_count")
+                   or 0)
+        if in_tok or out_tok:
+            return int(in_tok), int(out_tok)
+    # Ollama: top-level prompt_eval_count / eval_count
+    if isinstance(raw, dict):
+        in_tok = raw.get("prompt_eval_count", 0)
+        out_tok = raw.get("eval_count", 0)
+        if in_tok or out_tok:
+            return int(in_tok), int(out_tok)
+    return estimate_tokens_from_text(prompt_text), estimate_tokens_from_text(reply_text)
 
 
 _client_singleton: LLMClient | None = None

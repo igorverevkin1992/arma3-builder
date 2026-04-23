@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ..protocols import MissionBlueprint
+from .loadout import lobby_param_block, resolve_loadouts
 
 
 def generate_mission_description_ext(
@@ -30,6 +31,13 @@ def generate_mission_description_ext(
     cfg_sounds = _cfg_sounds_block()
     cfg_radio = _cfg_radio_block(blueprint)
     cfg_identities = _cfg_identities_block(blueprint)
+
+    # Role-picker lobby params — only when loadouts are present.
+    resolved_loadouts = resolve_loadouts(
+        blueprint.loadouts,
+        faction_hint=("rhsusf_main" if any("rhs" in a for a in blueprint.addons) else "vanilla"),
+    )
+    params_block = lobby_param_block(resolved_loadouts) if resolved_loadouts else ""
 
     diary_meta = "\n".join(
         f'        // diary: {e.tab} - {e.title}'
@@ -89,6 +97,7 @@ def generate_mission_description_ext(
         f'{cfg_identities}\n'
         f'\n'
         f'{cfg_sentences_include}\n'
+        f'{params_block}\n'
         f'class CfgDebriefing\n{{\n'
         + "\n".join(end_classes)
         + '\n};\n'
@@ -128,12 +137,15 @@ def _cfg_functions_block() -> str:
         '        class core\n'
         '        {\n'
         '            file = "functions";\n'
-        '            class initFsm        { };\n'
-        '            class registerTasks  { };\n'
-        '            class repairLoop     { };\n'
-        '            class saveProgress   { };\n'
-        '            class loadProgress   { };\n'
-        '            class playDialog     { };\n'
+        '            class initFsm                 { };\n'
+        '            class registerTasks           { };\n'
+        '            class repairLoop              { };\n'
+        '            class saveProgress            { };\n'
+        '            class loadProgress            { };\n'
+        '            class playDialog              { };\n'
+        '            class applyLoadout            { };\n'
+        '            class callSupport             { };\n'
+        '            class registerSupportActions  { };\n'
         '        };\n'
         '    };\n'
         '};'

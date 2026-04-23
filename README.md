@@ -89,13 +89,40 @@ specified by Bohemia Interactive for SP / coop campaigns.
 | Endpoint                               | Purpose                                           |
 |----------------------------------------|---------------------------------------------------|
 | `GET  /health`                         | Liveness                                          |
-| `POST /generate`                       | Prompt or brief → campaign (with score + launch)  |
+| `POST /generate`                       | Prompt or brief → campaign (+ score, launch, pacing, playtest, usage) |
 | `POST /generate/stream`                | Same, but SSE progress stream                     |
 | `POST /preview`                        | FSM graphs only, no file writes                   |
 | `GET  /templates`                      | List built-in mission templates                   |
 | `POST /templates/{id}/instantiate`     | Instantiate a template with parameters            |
 | `POST /refine`                         | Conversational follow-up + unified diff           |
-| `GET  /`, `GET /ui/*`                  | Web UI                                            |
+| `GET  /`, `GET /ui/*`                  | Web UI (wizard + classic tabs)                    |
+
+## Phase A extensions
+
+The `/generate` response now carries three richer advisory layers:
+
+* **`pacing`** — per-mission timeline, classifier per FSM state
+  (`setup`/`travel`/`engagement`/`stealth`/`dialogue`/`cutscene`/`extraction`),
+  estimated dwell time, and rhythm findings (`A3B310` no-engagement mission,
+  `A3B311` >10 min dead-zone, `A3B312` 3+ back-to-back engagements).
+  Web UI renders it as a colour-segmented timeline.
+* **`playtest`** — simulated playthrough of each mission's FSM. Flags
+  unreachable states (`A3B301`), dead ends (`A3B302`), and transition
+  conditions that reference undefined namespace variables / unit names
+  (`A3B303`). Non-blocking; surfaces in a dedicated UI panel.
+* **`usage`** — LLM token + cost accounting across the run, broken down
+  by agent role (orchestrator / narrative / scripter_repair / refine).
+  Shows at the top of the result pane alongside the quality score.
+
+Missions also gain two functional blocks:
+
+* **Loadouts** — faction-aware role kits (vanilla + RHS_USAF). Players
+  pick a role from the lobby params; initPlayerLocal applies the kit via
+  `A3B_fnc_applyLoadout`. Register custom loadouts at runtime with
+  `arma3_builder.arma.loadout.register_loadout(faction, Loadout(...))`.
+* **Support assets** — list `SupportAsset(kind="cas|artillery|medevac|
+  transport|ammo_drop")` on the blueprint and players get an `addAction`
+  menu with per-asset cooldown and use-count enforcement.
 
 ## Tests
 

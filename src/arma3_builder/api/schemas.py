@@ -33,6 +33,10 @@ class GenerateResponse(BaseModel):
     score: dict[str, int] | None = None
     launch: dict[str, Any] | None = None
     diff: list[dict[str, Any]] | None = None
+    # Phase-A additions.
+    pacing: dict[str, Any] | None = None
+    playtest: list[dict[str, Any]] | None = None
+    usage: dict[str, Any] | None = None
 
 
 class PreviewResponse(BaseModel):

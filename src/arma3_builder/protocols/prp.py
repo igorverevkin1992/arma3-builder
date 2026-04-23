@@ -62,6 +62,23 @@ class CampaignBrief(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
+class StateKind(str, Enum):
+    """Phase-A taxonomy used by the pacing analyser.
+
+    The classifier maps FSM states onto one of these kinds so the timeline
+    UI can colour and size them correctly. Unknown kinds default to GENERIC.
+    """
+    SETUP = "setup"
+    TRAVEL = "travel"
+    ENGAGEMENT = "engagement"
+    STEALTH = "stealth"
+    DIALOGUE = "dialogue"
+    CUTSCENE = "cutscene"
+    EXTRACTION = "extraction"
+    GENERIC = "generic"
+    TERMINAL = "terminal"
+
+
 class TransitionKind(str, Enum):
     TRIGGER = "trigger"          # condition expression (SQF)
     TIMER = "timer"              # numeric timeout in seconds
@@ -91,6 +108,21 @@ class FsmState(BaseModel):
     end_type: str | None = Field(
         default=None,
         description="If terminal: end1, end2, end3, loser, etc.",
+    )
+    kind: StateKind = Field(
+        default=StateKind.GENERIC,
+        description=(
+            "Declared state category for the pacing analyser. If not set, "
+            "the analyser will infer it from the label / on_enter actions."
+        ),
+    )
+    expected_seconds: int | None = Field(
+        default=None,
+        description=(
+            "Expected dwell time for this state under normal play. The "
+            "pacing analyser uses it to build the mission timeline. "
+            "None triggers a heuristic default per StateKind."
+        ),
     )
 
     @field_validator("id")
@@ -183,6 +215,47 @@ class Dialogue(BaseModel):
     )
 
 
+class Loadout(BaseModel):
+    """Gear assignment for a single player role."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role_id: str                              # e.g. "team_leader", "medic"
+    display_name: str                         # lobby-visible label
+    uniform: str = ""
+    vest: str = ""
+    headgear: str = ""
+    goggles: str = ""
+    backpack: str = ""
+    primary_weapon: str = ""
+    primary_magazines: list[tuple[str, int]] = Field(default_factory=list)
+    secondary_weapon: str = ""
+    secondary_magazines: list[tuple[str, int]] = Field(default_factory=list)
+    handgun: str = ""
+    handgun_magazines: list[tuple[str, int]] = Field(default_factory=list)
+    items: list[str] = Field(default_factory=list)
+    linked_items: list[str] = Field(
+        default_factory=list,
+        description="NVG, maps, compass, etc. — items that sit in linked slots",
+    )
+
+
+class SupportAsset(BaseModel):
+    """On-call support asset (CAS, artillery, medevac)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["cas", "artillery", "medevac", "transport", "ammo_drop"]
+    name: str
+    cooldown_seconds: int = 180
+    uses: int = Field(default=3, ge=1, description="Max calls; 0 = unlimited")
+    # Only used by specific kinds — kept as free-form strings so RAG-picked
+    # classnames from different mod sets plug in without bespoke schemas.
+    vehicle_classname: str = ""
+    ammo_classname: str = ""
+    ordnance_classname: str = ""
+
+
 class MissionBlueprint(BaseModel):
     """Concrete mission representation produced by the Narrative Director."""
 
@@ -198,6 +271,8 @@ class MissionBlueprint(BaseModel):
     waypoints: list[Waypoint] = Field(default_factory=list)
     diary: Diary = Field(default_factory=Diary)
     dialogue: list[Dialogue] = Field(default_factory=list)
+    loadouts: list[Loadout] = Field(default_factory=list)
+    support_assets: list[SupportAsset] = Field(default_factory=list)
     addons: list[str] = Field(default_factory=list)
 
 
@@ -290,3 +365,8 @@ class GenerationResult(BaseModel):
     qa: QAReport
     output_path: str | None = None
     iterations: int = 1
+    # Phase-A extensions. Kept optional for backwards-compat with callers
+    # who construct GenerationResult in tests.
+    pacing: dict[str, Any] | None = None
+    playtest: list[dict[str, Any]] | None = None
+    usage: dict[str, Any] | None = None

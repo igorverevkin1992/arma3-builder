@@ -102,6 +102,9 @@ async def generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         plan=result.plan,
         score=score.to_dict(),
         launch=launch,
+        pacing=result.pacing,
+        playtest=result.playtest,
+        usage=result.usage,
     )
 
 
@@ -128,6 +131,9 @@ async def generate_stream(req: GenerateRequest, request: Request) -> StreamingRe
                 warnings=len(result.qa.warnings),
                 score=score_campaign(result.plan, result.qa).to_dict(),
                 plan=result.plan.model_dump(mode="json"),
+                pacing=result.pacing,
+                playtest=result.playtest,
+                usage=result.usage,
             )
         except asyncio.CancelledError:
             # Client disconnected — propagate so the task tree shuts down.
@@ -250,6 +256,9 @@ async def refine(req: RefineRequest, request: Request) -> GenerateResponse:
         score=score.to_dict(),
         launch=launch,
         diff=[{"path": d.path, "change": d.change, "unified": d.unified} for d in diff],
+        pacing=result.pacing,
+        playtest=result.playtest,
+        usage=result.usage,
     )
 
 
