@@ -13,6 +13,9 @@ from ..arma import (
     generate_init_sqf,
     generate_statemachine_sqf,
 )
+from ..arma.behaviour import generate_bind_behaviour_sqf
+from ..arma.compositions import expand_all
+from ..arma.cutscene import cutscene_paths, wire_cutscenes_into_fsm
 from ..arma.dialog import (
     generate_cfg_sentences,
     generate_dialog_driver_sqf,
@@ -24,14 +27,21 @@ from ..arma.loadout import (
     generate_loadout_sqf,
     resolve_loadouts,
 )
+from ..arma.music import wire_music_into_fsm
 from ..arma.persistence import (
     generate_end_hook_sqf,
     generate_load_progress_sqf,
     generate_save_progress_sqf,
 )
+from ..arma.reinforcements import generate_reinforcements_sqf
 from ..arma.support import (
     generate_support_actions_sqf,
     generate_support_sqf,
+)
+from ..arma.worldflags import (
+    generate_world_flags_helper_sqf,
+    generate_world_flags_reader_sqf,
+    wire_world_flag_writes,
 )
 from ..config import get_settings
 from ..protocols import (
@@ -61,6 +71,18 @@ class ScripterAgent(Agent):
         # in the indexed docs. If not, we fall back to a vanilla implementation
         # (still correct but less elegant). This matches TZ §3.
         self._cba_available = self._rag_check_cba(ctx)
+
+        # Phase B — expand compositions and splice into the unit list.
+        comp_units, comp_waypoints = expand_all(blueprint.compositions)
+        if comp_units:
+            blueprint.units = list(blueprint.units) + comp_units
+            blueprint.waypoints = list(blueprint.waypoints) + comp_waypoints
+
+        # Phase B — inject runtime side-effects into FSM.on_enter before the
+        # state-machine SQF is rendered.
+        wire_world_flag_writes(blueprint)
+        wire_cutscenes_into_fsm(blueprint)
+        wire_music_into_fsm(blueprint)
 
         artifacts: list[GeneratedArtifact] = [
             GeneratedArtifact(
@@ -150,6 +172,40 @@ class ScripterAgent(Agent):
             artifacts.append(GeneratedArtifact(
                 relative_path=f"{prefix}/functions/fn_registerSupportActions.sqf",
                 content=generate_support_actions_sqf(blueprint),
+                kind="sqf",
+            ))
+
+        # Phase B — behaviour bindings, reinforcements, world-flag helpers,
+        # cutscenes and music wiring.
+        if blueprint.behaviour_bindings:
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/functions/fn_bindBehaviour.sqf",
+                content=generate_bind_behaviour_sqf(blueprint),
+                kind="sqf",
+            ))
+        if blueprint.reinforcements:
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/functions/fn_reinforcements.sqf",
+                content=generate_reinforcements_sqf(blueprint),
+                kind="sqf",
+            ))
+        # World-flag helpers are cheap; always emit them so designers can
+        # call A3B_fnc_setWorldFlag ad-hoc even without declared writes.
+        artifacts.append(GeneratedArtifact(
+            relative_path=f"{prefix}/functions/fn_setWorldFlag.sqf",
+            content=generate_world_flags_helper_sqf(),
+            kind="sqf",
+        ))
+        artifacts.append(GeneratedArtifact(
+            relative_path=f"{prefix}/functions/fn_getWorldFlag.sqf",
+            content=generate_world_flags_reader_sqf(),
+            kind="sqf",
+        ))
+        # Cutscenes are standalone SQF files under cutscenes/.
+        for rel, content in cutscene_paths(blueprint):
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/{rel}",
+                content=content,
                 kind="sqf",
             ))
 

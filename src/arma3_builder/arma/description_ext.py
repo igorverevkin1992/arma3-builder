@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from ..protocols import MissionBlueprint
 from .loadout import lobby_param_block, resolve_loadouts
+from .music import generate_cfg_music_block
 
 
 def generate_mission_description_ext(
@@ -31,6 +32,7 @@ def generate_mission_description_ext(
     cfg_sounds = _cfg_sounds_block()
     cfg_radio = _cfg_radio_block(blueprint)
     cfg_identities = _cfg_identities_block(blueprint)
+    cfg_music = generate_cfg_music_block(blueprint)
 
     # Role-picker lobby params — only when loadouts are present.
     resolved_loadouts = resolve_loadouts(
@@ -96,6 +98,11 @@ def generate_mission_description_ext(
         f'\n'
         f'{cfg_identities}\n'
         f'\n'
+        f'// Campaign-level named NPCs — consistent face/voice across missions.\n'
+        f'#include "..\\..\\characters.hpp"\n'
+        f'\n'
+        f'{cfg_music}\n'
+        f'\n'
         f'{cfg_sentences_include}\n'
         f'{params_block}\n'
         f'class CfgDebriefing\n{{\n'
@@ -146,6 +153,10 @@ def _cfg_functions_block() -> str:
         '            class applyLoadout            { };\n'
         '            class callSupport             { };\n'
         '            class registerSupportActions  { };\n'
+        '            class bindBehaviour           { };\n'
+        '            class reinforcements          { };\n'
+        '            class setWorldFlag            { };\n'
+        '            class getWorldFlag            { };\n'
         '        };\n'
         '    };\n'
         '};'

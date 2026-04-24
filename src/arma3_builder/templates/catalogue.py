@@ -10,8 +10,12 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..arma.campaign import slugify
+from ..arma.maps import MapSampler
 from ..protocols import (
+    BehaviourBinding,
     BriefingEntry,
+    Composition,
+    Cutscene,
     Dialogue,
     Diary,
     FsmGraph,
@@ -19,9 +23,12 @@ from ..protocols import (
     FsmTransition,
     MissionBlueprint,
     MissionBrief,
+    MusicCue,
+    ReinforcementWave,
     TransitionKind,
     UnitPlacement,
     Waypoint,
+    WorldFlagWrite,
 )
 
 
@@ -159,6 +166,16 @@ def _convoy(p: dict) -> MissionBlueprint:
             FsmState(id="failure", label="Convoy lost", is_terminal=True, end_type="loser"),
         ],
     )
+    # Phase B — map-aware anchors when we know the world, else fall back.
+    sampler = MapSampler(p["map"])
+    anchor_start = (
+        sampler.pick_poi(kind="urban").position
+        if sampler.available and sampler.pick_poi(kind="urban") is not None
+        else (100.0, 100.0, 0.0)
+    )
+    ambush_pos = sampler.urban_cover_near(anchor_start) if sampler.available else (250.0, 150.0, 0.0)
+    lz_pos = sampler.lz_near(ambush_pos) if sampler.available else (300.0, 300.0, 0.0)
+
     return MissionBlueprint(
         mission_id=_mission_id(p),
         brief=_brief(
@@ -168,9 +185,67 @@ def _convoy(p: dict) -> MissionBlueprint:
             tags=["convoy", "escort"],
         ),
         fsm=fsm,
-        units=_player_squad(p, (100.0, 100.0, 0.0))
-              + _enemy_group(p, (250.0, 150.0, 0.0), count=8),
-        waypoints=[Waypoint(group_id="player", position=(300.0, 300.0, 0.0), type="MOVE")],
+        units=_player_squad(p, anchor_start),
+        waypoints=[
+            Waypoint(group_id="player", position=lz_pos, type="MOVE"),
+        ],
+        compositions=[
+            Composition(
+                id="ambush_east",
+                kind="fire_team",
+                side=p["enemy_side"],
+                faction_hint=("rhsusf_main" if p.get("enemy_class", "").startswith("rhs_") else "vanilla"),
+                anchor=ambush_pos,
+                size=4,
+            ),
+        ],
+        behaviour_bindings=[
+            BehaviourBinding(
+                group_id="ambush_east",
+                kind="defend",
+                radius=120.0,
+                combat_mode="RED",
+                behaviour="COMBAT",
+            ),
+        ],
+        reinforcements=[
+            ReinforcementWave(
+                id="wave_alpha",
+                composition_id="ambush_east",
+                trigger_state="ambush",
+                max_count=1,
+            ),
+        ],
+        cutscenes=[
+            Cutscene(
+                id="intro",
+                kind="intro",
+                trigger_state="depart",
+                duration_seconds=6,
+                lock_player_input=False,
+                script=[
+                    'titleText ["Convoy Escort — Move out.", "PLAIN DOWN"]',
+                ],
+            ),
+        ],
+        music_cues=[
+            MusicCue(id="combat_on", track="LeadTrack01a_F_EPA",
+                     trigger_state="ambush", fade_seconds=1.5),
+            MusicCue(id="extract_theme", track="LeadTrack04_F_EPB",
+                     trigger_state="extract", fade_seconds=2.0),
+        ],
+        world_flag_writes=[
+            WorldFlagWrite(
+                key="convoy_survived", value=True,
+                trigger_state="extract",
+                description="Set when players reach extract with squad alive.",
+            ),
+            WorldFlagWrite(
+                key="convoy_survived", value=False,
+                trigger_state="failure",
+                description="Set on convoy wipe — later missions may branch.",
+            ),
+        ],
         diary=Diary(entries=[
             BriefingEntry(tab="Situation", title="Threat",
                           text="Partisan activity reported on the route."),

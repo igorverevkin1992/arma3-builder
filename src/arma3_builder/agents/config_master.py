@@ -8,6 +8,7 @@ from ..arma import (
     render_sqm,
 )
 from ..arma.campaign import mission_dir_name, slugify
+from ..arma.characters import generate_characters_hpp
 from ..arma.packager import pbo_prefix_file
 from ..arma.stringtable import render_stringtable
 from ..config import get_settings
@@ -93,6 +94,14 @@ class ConfigMasterAgent(Agent):
             relative_path="stringtable.xml",
             content=render_stringtable(plan, languages=["English", "Russian"]),
             kind="txt",
+        ))
+
+        # Campaign-level CfgIdentities (`characters.hpp`) — missions pull it
+        # via `#include "..\\..\\characters.hpp"` from their description.ext.
+        artifacts.append(GeneratedArtifact(
+            relative_path="characters.hpp",
+            content=generate_characters_hpp(plan),
+            kind="cpp",
         ))
 
         # Remember classnames the registry could not resolve so QA can flag them.

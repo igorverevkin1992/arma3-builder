@@ -379,9 +379,11 @@ function renderResult(payload) {
             el.classList.add("selected");
             currentMissionIdx = parseInt(el.dataset.idx, 10);
             drawFsm(lastPlan.blueprints[currentMissionIdx]);
+            drawMap(lastPlan.blueprints[currentMissionIdx]);
         });
     });
     drawFsm(lastPlan.blueprints[0]);
+    drawMap(lastPlan.blueprints[0]);
 
     // Launch
     const l = payload.launch || {};
@@ -539,6 +541,107 @@ function drawFsm(bp) {
             ctx.fillText(`end: ${n.endType || "?"}`, p.x, p.y + 16);
         }
     });
+}
+
+// -------- Map preview (top-down, view-only) -----------------------------
+//
+// Renders units, waypoints and markers in world coordinates fitted into
+// the canvas. Hover over any feature for a tooltip with its metadata.
+let mapHoverIndex = null;
+function drawMap(bp) {
+    const c = $("#map");
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+    if (!bp) return;
+
+    // Collect points.
+    const pts = [];
+    for (const u of (bp.units || [])) {
+        pts.push({
+            x: u.position[0], y: u.position[1],
+            kind: u.is_player ? "player" : "enemy",
+            side: u.side,
+            label: (u.name || u.classname) + " · " + u.side,
+        });
+    }
+    for (const w of (bp.waypoints || [])) {
+        pts.push({
+            x: w.position[0], y: w.position[1],
+            kind: "waypoint", side: "",
+            label: "waypoint " + (w.type || ""),
+        });
+    }
+    if (!pts.length) return;
+
+    // Bounds with 10% padding.
+    const minX = Math.min(...pts.map((p) => p.x));
+    const maxX = Math.max(...pts.map((p) => p.x));
+    const minY = Math.min(...pts.map((p) => p.y));
+    const maxY = Math.max(...pts.map((p) => p.y));
+    const pad = 40;
+    const spanX = Math.max(1, maxX - minX);
+    const spanY = Math.max(1, maxY - minY);
+    const W = c.width - 2 * pad;
+    const H = c.height - 2 * pad;
+    const scale = Math.min(W / spanX, H / spanY);
+    const offX = pad + (W - spanX * scale) / 2;
+    const offY = pad + (H - spanY * scale) / 2;
+
+    // Invert Y so north is up.
+    const screen = (p) => ({
+        x: offX + (p.x - minX) * scale,
+        y: c.height - (offY + (p.y - minY) * scale),
+    });
+
+    // Grid.
+    ctx.strokeStyle = "#30363d";
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 5; i++) {
+        const y = (c.height / 5) * i;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(c.width, y); ctx.stroke();
+        const x = (c.width / 5) * i;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, c.height); ctx.stroke();
+    }
+
+    // Title + axes hint.
+    ctx.fillStyle = "#8b949e";
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.fillText(`${bp.brief.map}  ·  ${pts.length} features`, 8, 14);
+
+    // Features.
+    const screenPts = pts.map((p) => ({ ...p, ...screen(p) }));
+    screenPts.forEach((p, i) => {
+        ctx.beginPath();
+        let color = "#6e7681";
+        let r = 3;
+        if (p.kind === "player")    { color = "#58a6ff"; r = 5; }
+        else if (p.kind === "enemy"){ color = (p.side === "EAST" ? "#f85149" : "#d29922"); r = 4; }
+        else if (p.kind === "waypoint") { color = "#7ee787"; r = 3; }
+        ctx.fillStyle = color;
+        ctx.arc(p.x, p.y, r + (i === mapHoverIndex ? 2 : 0), 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Hover handling.
+    c.onmousemove = (e) => {
+        const rect = c.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) * (c.width / rect.width);
+        const my = (e.clientY - rect.top) * (c.height / rect.height);
+        let best = null, bestDist = 12;
+        screenPts.forEach((p, i) => {
+            const d = Math.hypot(p.x - mx, p.y - my);
+            if (d < bestDist) { best = i; bestDist = d; }
+        });
+        if (best !== mapHoverIndex) {
+            mapHoverIndex = best;
+            $("#map-hover").textContent = best === null
+                ? ""
+                : `${screenPts[best].label}  @  ${screenPts[best].x.toFixed(0)}, ${screenPts[best].y.toFixed(0)}`;
+            drawMap(bp);
+        }
+    };
+    c.onmouseleave = () => { mapHoverIndex = null; $("#map-hover").textContent = ""; drawMap(bp); };
 }
 
 // -------- Refine --------------------------------------------------------

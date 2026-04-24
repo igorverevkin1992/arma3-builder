@@ -1,0 +1,26 @@
+{
+  "world": "Altis",
+  "world_class": "Altis",
+  "size": [30720, 30720],
+  "points_of_interest": [
+    {"id": "kavala",       "kind": "urban",    "position": [3656, 13130, 0], "radius": 500},
+    {"id": "pyrgos",       "kind": "urban",    "position": [16500, 12400, 0], "radius": 450},
+    {"id": "agios_dionysios","kind":"urban",   "position": [17200, 15500, 0], "radius": 380},
+    {"id": "altis_intl",   "kind": "airfield", "position": [14650, 17200, 0], "radius": 700},
+    {"id": "molos_airfield","kind":"airfield", "position": [22950, 21150, 0], "radius": 600},
+    {"id": "athira",       "kind": "urban",    "position": [12750, 15700, 0], "radius": 420},
+    {"id": "sofia",        "kind": "urban",    "position": [21650, 19550, 0], "radius": 320},
+    {"id": "mount_olympus","kind": "hill",     "position": [23500, 20350, 600], "radius": 800}
+  ],
+  "roads": [
+    [[3656, 13130], [8200, 13950], [12750, 15700], [16500, 12400]],
+    [[16500, 12400], [14650, 17200], [17200, 15500]],
+    [[17200, 15500], [21650, 19550], [22950, 21150]]
+  ],
+  "lz_candidates": [
+    {"id": "lz_alpha",  "position": [4200, 13550, 0]},
+    {"id": "lz_bravo",  "position": [13200, 15900, 0]},
+    {"id": "lz_charlie","position": [17200, 13400, 0]},
+    {"id": "lz_delta",  "position": [22500, 21000, 0]}
+  ]
+}

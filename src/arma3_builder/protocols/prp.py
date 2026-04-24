@@ -47,6 +47,8 @@ class CampaignBrief(BaseModel):
         description="Mapping of side -> faction classname (e.g. WEST -> 'rhs_faction_usmc_d')",
     )
     missions: list[MissionBrief] = Field(default_factory=list)
+    # Phase B: recurring NPCs shared across missions.
+    characters: list["Character"] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -215,6 +217,131 @@ class Dialogue(BaseModel):
     )
 
 
+# --------------------------------------------------------------------------- #
+# Phase B — cross-mission characters, world state, cutscenes, music
+# --------------------------------------------------------------------------- #
+
+
+class Character(BaseModel):
+    """A campaign-level NPC that appears in multiple missions.
+
+    Storing characters at the campaign level (instead of per-mission) lets
+    CfgIdentities stay consistent: Sgt Miller has the same face and voice
+    everywhere he appears, and the UI can show his arc across the campaign.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str                                # "sgt_miller"
+    name: str                              # human display name
+    role: str = "soldier"                  # "squad_leader" | "pilot" | "HVT" | ...
+    face: str = ""                         # CfgFaces classname (e.g. "WhiteHead_01")
+    voice: str = "Male01ENG"               # CfgVoice speaker
+    glasses: str = ""
+    pitch: float = 1.0
+    arc: str = ""                          # narrative notes, surfaced in UI
+    appearances: list[str] = Field(        # mission_ids where the character appears
+        default_factory=list,
+    )
+
+
+class WorldFlagWrite(BaseModel):
+    """State change that one mission announces to later missions.
+
+    Emitted as SQF on a given FSM state's entry: the flag is persisted
+    via ``A3B_fnc_setWorldFlag`` (profileNamespace-backed) so the next
+    mission's conditional transitions can read it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str                               # e.g. "saved_pilot"
+    value: Any = True                      # bool / int / string
+    trigger_state: str                     # FSM state id whose entry triggers this
+    description: str = ""
+
+
+class MusicCue(BaseModel):
+    """Music played during the mission, keyed off an FSM state entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    track: str                             # CfgMusic classname OR a vanilla one
+    trigger_state: str
+    volume: float = 1.0
+    fade_seconds: float = 2.0
+
+
+class Cutscene(BaseModel):
+    """Scripted camera sequence — intro, interlude, or outro."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    kind: Literal["intro", "interlude", "outro"] = "interlude"
+    trigger_state: str                     # FSM state whose entry triggers this
+    # List of SQF statements. Generator wraps them in a camera+fade envelope.
+    script: list[str] = Field(default_factory=list)
+    duration_seconds: int = 8
+    lock_player_input: bool = True
+
+
+class Composition(BaseModel):
+    """Named squad/patrol/garrison template.
+
+    Resolved by ``arma3_builder.arma.compositions`` into concrete
+    ``UnitPlacement``s at generation time. Choosing ``kind`` controls the
+    role layout (fire team / squad / motorised patrol / …).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    kind: Literal[
+        "fire_team", "squad", "motorised_patrol", "vip_convoy",
+        "garrison", "heli_insertion",
+    ]
+    side: str = "EAST"
+    faction_hint: str = "vanilla"            # vanilla | rhsusf_main | cup | ...
+    anchor: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    heading: float = 0.0
+    size: int = 4
+    group_id: str | None = None
+    role_override: str | None = None
+
+
+class BehaviourBinding(BaseModel):
+    """Attach a behaviour tree to a group."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    group_id: str
+    kind: Literal["garrison", "patrol", "flank", "defend", "hunt"] = "patrol"
+    radius: float = 200.0
+    waypoints: list[tuple[float, float, float]] = Field(default_factory=list)
+    combat_mode: str = "YELLOW"
+    behaviour: str = "SAFE"                  # default Arma behaviour string
+
+
+class ReinforcementWave(BaseModel):
+    """A delayed spawn wave that fires on an FSM state or timer.
+
+    Use ``trigger_state`` to fire when the FSM enters a given state (server
+    serialises via CBA state-machine addStateScript), OR ``trigger_delay``
+    to fire N seconds after mission start. Both can be set; the wave fires
+    when *either* condition is met.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    composition_id: str                      # references Composition.id
+    trigger_state: str | None = None
+    trigger_delay_seconds: int | None = None
+    max_count: int = 1                       # spawn up to N copies, one per trigger
+
+
 class Loadout(BaseModel):
     """Gear assignment for a single player role."""
 
@@ -273,6 +400,13 @@ class MissionBlueprint(BaseModel):
     dialogue: list[Dialogue] = Field(default_factory=list)
     loadouts: list[Loadout] = Field(default_factory=list)
     support_assets: list[SupportAsset] = Field(default_factory=list)
+    # Phase B additions.
+    compositions: list[Composition] = Field(default_factory=list)
+    behaviour_bindings: list[BehaviourBinding] = Field(default_factory=list)
+    reinforcements: list[ReinforcementWave] = Field(default_factory=list)
+    cutscenes: list[Cutscene] = Field(default_factory=list)
+    music_cues: list[MusicCue] = Field(default_factory=list)
+    world_flag_writes: list[WorldFlagWrite] = Field(default_factory=list)
     addons: list[str] = Field(default_factory=list)
 
 
@@ -370,3 +504,7 @@ class GenerationResult(BaseModel):
     pacing: dict[str, Any] | None = None
     playtest: list[dict[str, Any]] | None = None
     usage: dict[str, Any] | None = None
+
+
+# Resolve forward references (CampaignBrief -> Character).
+CampaignBrief.model_rebuild()

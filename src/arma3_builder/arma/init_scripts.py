@@ -50,6 +50,11 @@ def generate_init_server(blueprint: MissionBlueprint) -> str:
         "// state machine is stored in missionNamespace under \"A3B_stateMachine\".\n"
         "[] call A3B_fnc_initFsm;\n"
         "\n"
+        "// Phase B — bind AI behaviours AFTER the FSM exists so behaviours that\n"
+        "// reference A3B_stateMachine resolve correctly.\n"
+        "if (!isNil \"A3B_fnc_bindBehaviour\") then { [] call A3B_fnc_bindBehaviour; };\n"
+        "if (!isNil \"A3B_fnc_reinforcements\") then { [] call A3B_fnc_reinforcements; };\n"
+        "\n"
         f"diag_log format [\"[A3B] mission started, %1 placed units, addons: {addons}\", {units_count}];\n"
     )
 

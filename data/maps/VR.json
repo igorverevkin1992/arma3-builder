@@ -1,0 +1,15 @@
+{
+  "world": "VR",
+  "world_class": "VR",
+  "size": [8192, 8192],
+  "points_of_interest": [
+    {"id": "centre",   "kind": "urban",   "position": [4100, 4100, 0], "radius": 400},
+    {"id": "north",    "kind": "outpost", "position": [4100, 5400, 0], "radius": 120},
+    {"id": "east",     "kind": "outpost", "position": [5400, 4100, 0], "radius": 120}
+  ],
+  "roads": [[[4100, 4100], [4100, 5400]], [[4100, 4100], [5400, 4100]]],
+  "lz_candidates": [
+    {"id": "lz_alpha",  "position": [4100, 3600, 0]},
+    {"id": "lz_bravo",  "position": [3600, 4100, 0]}
+  ]
+}
