@@ -55,6 +55,9 @@ def generate_init_server(blueprint: MissionBlueprint) -> str:
         "if (!isNil \"A3B_fnc_bindBehaviour\") then { [] call A3B_fnc_bindBehaviour; };\n"
         "if (!isNil \"A3B_fnc_reinforcements\") then { [] call A3B_fnc_reinforcements; };\n"
         "\n"
+        "// Phase C — spawn virtual arsenals declared on the blueprint.\n"
+        "if (!isNil \"A3B_fnc_spawnArsenals\") then { [] call A3B_fnc_spawnArsenals; };\n"
+        "\n"
         f"diag_log format [\"[A3B] mission started, %1 placed units, addons: {addons}\", {units_count}];\n"
     )
 

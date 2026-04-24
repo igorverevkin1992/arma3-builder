@@ -180,9 +180,13 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 #diff-panel .diff-body .add { color: #7ee787; }
 #diff-panel .diff-body .del { color: #f85149; }
 
-#fsm { background: #0d1117; border-radius: 6px; display: block; width: 100%; }
+#fsm { background: #0d1117; border-radius: 6px; display: block; width: 100%; cursor: pointer; }
 #map { background: #0d1117; border-radius: 6px; display: block; width: 100%; margin-top: 8px; }
 #map-hover { min-height: 14px; }
+
+#fsm-edit label { display: block; font-size: 11px; color: #8b949e; margin-top: 6px; }
+#fsm-edit textarea, #fsm-edit input { font-family: ui-monospace, monospace; font-size: 12px; }
+#eden-sqm { font-family: ui-monospace, monospace; font-size: 11px; }
 
 /* Wizard ----------------------------------------------------------------- */
 .wizard-steps {

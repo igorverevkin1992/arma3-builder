@@ -1,7 +1,8 @@
 """Mission-level description.ext generation."""
 from __future__ import annotations
 
-from ..protocols import MissionBlueprint
+from ..protocols import AceSettings, MissionBlueprint
+from .ace_medical import generate_ace_settings_block
 from .loadout import lobby_param_block, resolve_loadouts
 from .music import generate_cfg_music_block
 
@@ -12,6 +13,7 @@ def generate_mission_description_ext(
     skip_lobby: bool | None = None,
     respawn: str | None = None,
     respawn_delay: int = 8,
+    ace_settings: AceSettings | None = None,
 ) -> str:
     is_coop = blueprint.brief.player_count > 1
     if skip_lobby is None:
@@ -33,6 +35,7 @@ def generate_mission_description_ext(
     cfg_radio = _cfg_radio_block(blueprint)
     cfg_identities = _cfg_identities_block(blueprint)
     cfg_music = generate_cfg_music_block(blueprint)
+    ace_block = generate_ace_settings_block(ace_settings)
 
     # Role-picker lobby params — only when loadouts are present.
     resolved_loadouts = resolve_loadouts(
@@ -103,6 +106,8 @@ def generate_mission_description_ext(
         f'\n'
         f'{cfg_music}\n'
         f'\n'
+        f'{ace_block}\n'
+        f'\n'
         f'{cfg_sentences_include}\n'
         f'{params_block}\n'
         f'class CfgDebriefing\n{{\n'
@@ -157,6 +162,8 @@ def _cfg_functions_block() -> str:
         '            class reinforcements          { };\n'
         '            class setWorldFlag            { };\n'
         '            class getWorldFlag            { };\n'
+        '            class spawnArsenals           { };\n'
+        '            class initArsenalsClient      { };\n'
         '        };\n'
         '    };\n'
         '};'

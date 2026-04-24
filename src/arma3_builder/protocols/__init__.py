@@ -1,12 +1,14 @@
 """Inter-agent communication protocols (PRP / A2A-style messages)."""
 from .messages import AgentMessage, MessageKind, RepairRequest
 from .prp import (
+    AceSettings,
     BehaviourBinding,
     BriefingEntry,
     CampaignBrief,
     CampaignPlan,
     Character,
     Composition,
+    CriticNote,
     Cutscene,
     Dialogue,
     Diary,
@@ -27,11 +29,13 @@ from .prp import (
     SupportAsset,
     TransitionKind,
     UnitPlacement,
+    VirtualArsenal,
     Waypoint,
     WorldFlagWrite,
 )
 
 __all__ = [
+    "AceSettings",
     "AgentMessage",
     "BehaviourBinding",
     "BriefingEntry",
@@ -39,6 +43,7 @@ __all__ = [
     "CampaignPlan",
     "Character",
     "Composition",
+    "CriticNote",
     "Cutscene",
     "Dialogue",
     "Diary",
@@ -61,6 +66,7 @@ __all__ = [
     "SupportAsset",
     "TransitionKind",
     "UnitPlacement",
+    "VirtualArsenal",
     "Waypoint",
     "WorldFlagWrite",
 ]

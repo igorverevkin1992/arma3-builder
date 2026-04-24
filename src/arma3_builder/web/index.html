@@ -67,6 +67,9 @@
             <h3>QA report <span id="qa-summary" class="muted"></span></h3>
             <ul id="findings" class="findings"></ul>
 
+            <h3>Critic notes <span id="critic-summary" class="muted"></span></h3>
+            <ul id="critic-notes" class="findings"></ul>
+
             <h3>Mission pacing</h3>
             <div id="pacing"></div>
 
@@ -93,12 +96,31 @@
     </section>
 
     <section class="panel right">
-        <h2>3. FSM graph</h2>
+        <h2>3. FSM editor</h2>
         <canvas id="fsm" width="480" height="360"></canvas>
         <p class="muted small" id="fsm-mission-label"></p>
-        <h2>4. Map preview</h2>
+        <div id="fsm-edit" class="hidden">
+            <label>State label <input id="fsm-label" type="text"></label>
+            <label>On-enter SQF (one stmt per line)
+                <textarea id="fsm-on-enter" rows="3"></textarea>
+            </label>
+            <label>Transitions (from-state)
+                <textarea id="fsm-transitions" rows="3" placeholder='[{"to":"end1","condition":"true"}]'></textarea>
+            </label>
+            <button id="fsm-save-state" class="secondary">Apply changes</button>
+        </div>
+        <button id="fsm-push" class="primary" style="margin-top: 8px">Regenerate with edits</button>
+
+        <h2 style="margin-top: 14px">4. Map preview</h2>
         <canvas id="map" width="480" height="360"></canvas>
         <p class="muted small" id="map-hover"></p>
+
+        <h2 style="margin-top: 14px">5. Eden sync</h2>
+        <label class="muted small">Paste a mission.sqm edited in Eden Editor.
+            Unit positions and waypoints merge back onto the selected mission;
+            everything else (FSM, dialog, support) is preserved.</label>
+        <textarea id="eden-sqm" rows="4" placeholder="version=53;..."></textarea>
+        <button id="eden-sync" class="secondary">Sync from Eden</button>
     </section>
 </main>
 

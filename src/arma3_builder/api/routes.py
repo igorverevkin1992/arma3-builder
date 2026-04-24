@@ -21,8 +21,10 @@ from .events import EventBus
 from .schemas import (
     GenerateRequest,
     GenerateResponse,
+    PlanUpdateRequest,
     PreviewResponse,
     RefineRequest,
+    SyncFromEdenRequest,
     TemplateInstance,
 )
 
@@ -105,6 +107,7 @@ async def generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         pacing=result.pacing,
         playtest=result.playtest,
         usage=result.usage,
+        critic_notes=result.critic_notes,
     )
 
 
@@ -134,6 +137,7 @@ async def generate_stream(req: GenerateRequest, request: Request) -> StreamingRe
                 pacing=result.pacing,
                 playtest=result.playtest,
                 usage=result.usage,
+                critic_notes=result.critic_notes,
             )
         except asyncio.CancelledError:
             # Client disconnected — propagate so the task tree shuts down.
@@ -259,7 +263,97 @@ async def refine(req: RefineRequest, request: Request) -> GenerateResponse:
         pacing=result.pacing,
         playtest=result.playtest,
         usage=result.usage,
+        critic_notes=result.critic_notes,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Phase C — plan update + Eden sync + standalone critique
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/plan/update", response_model=GenerateResponse)
+async def plan_update(req: PlanUpdateRequest, request: Request) -> GenerateResponse:
+    """Accept a user-edited CampaignPlan (e.g. FSM tweaks from the web UI)
+    and optionally regenerate artefacts from it. No LLM involvement."""
+    if not req.regenerate:
+        # Just echo the plan back so the UI can confirm validity without
+        # paying the generate-and-package cost.
+        from ..protocols import QAReport
+        return GenerateResponse(
+            output_path=None, iterations=0,
+            qa=QAReport(),
+            artifact_count=0,
+            plan=req.plan,
+        )
+    result = await _pipeline.generate_from_plan(req.plan)
+    session = _session_key(dict(request.headers))
+    _store_run(session, plan=result.plan, artifacts=result.artifacts)
+    first = result.plan.blueprints[0] if result.plan.blueprints else None
+    launch = build_launch_payload(
+        Path(result.output_path or "."),
+        world=first.brief.map if first else "VR",
+        slug=result.output_path.split("/")[-1] if result.output_path else "",
+        mods=result.plan.brief.mods,
+    )
+    return GenerateResponse(
+        output_path=result.output_path,
+        iterations=result.iterations,
+        qa=result.qa,
+        artifact_count=len(result.artifacts),
+        plan=result.plan,
+        score=score_campaign(result.plan, result.qa).to_dict(),
+        launch=launch,
+        pacing=result.pacing,
+        playtest=result.playtest,
+        usage=result.usage,
+        critic_notes=result.critic_notes,
+    )
+
+
+@router.post("/sync-from-eden", response_model=GenerateResponse)
+async def sync_from_eden(req: SyncFromEdenRequest, request: Request) -> GenerateResponse:
+    """Merge Eden-edited ``mission.sqm`` back onto a mission blueprint."""
+    from ..arma.sqm_import import sync_into_blueprint
+
+    if req.mission_index < 0 or req.mission_index >= len(req.plan.blueprints):
+        raise HTTPException(status_code=400, detail="mission_index out of range")
+    new_plan = req.plan.model_copy(deep=True)
+    new_plan.blueprints[req.mission_index] = sync_into_blueprint(
+        new_plan.blueprints[req.mission_index], req.sqm_text
+    )
+    # Regenerate downstream artefacts so the user sees the edit take effect.
+    result = await _pipeline.generate_from_plan(new_plan)
+    session = _session_key(dict(request.headers))
+    _store_run(session, plan=result.plan, artifacts=result.artifacts)
+    first = result.plan.blueprints[0] if result.plan.blueprints else None
+    launch = build_launch_payload(
+        Path(result.output_path or "."),
+        world=first.brief.map if first else "VR",
+        slug=result.output_path.split("/")[-1] if result.output_path else "",
+        mods=result.plan.brief.mods,
+    )
+    return GenerateResponse(
+        output_path=result.output_path,
+        iterations=result.iterations,
+        qa=result.qa,
+        artifact_count=len(result.artifacts),
+        plan=result.plan,
+        score=score_campaign(result.plan, result.qa).to_dict(),
+        launch=launch,
+        pacing=result.pacing,
+        playtest=result.playtest,
+        usage=result.usage,
+        critic_notes=result.critic_notes,
+    )
+
+
+@router.post("/critique")
+async def critique(req: RefineRequest) -> dict[str, Any]:
+    """Standalone Critic pass on an existing plan, no regeneration."""
+    ctx = _pipeline.make_context()
+    notes = await _pipeline.critic.run(req.plan, ctx)
+    return {"notes": [n.model_dump() for n in notes]}
 
 
 # --------------------------------------------------------------------------- #

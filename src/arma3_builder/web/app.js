@@ -6,6 +6,11 @@ const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 let lastPlan = null;
 let currentMissionIdx = 0;
 let lastPayload = null;          // last generate/stream done payload
+// Phase-C FSM editor state — per-mission node positions (canvas coords),
+// currently-selected state id, and whether a drag is in progress.
+const fsmLayout = {};            // { missionIdx: { stateId: {x,y} } }
+let fsmSelected = null;
+let fsmDragging = null;          // { stateId, dx, dy }
 
 // ------------------------------ Wizard state ------------------------------
 
@@ -364,6 +369,7 @@ function renderResult(payload) {
     renderUsage(payload.usage);
     renderPacing(payload.pacing);
     renderPlaytest(payload.playtest);
+    renderCritic(payload.critic_notes);
 
     // Missions
     $("#missions").innerHTML = (payload.plan.blueprints || []).map((bp, i) => `
@@ -451,6 +457,27 @@ function renderPacing(pacing) {
     }
 }
 
+function renderCritic(notes) {
+    const el = $("#critic-notes");
+    if (!el) return;
+    notes = notes || [];
+    $("#critic-summary").textContent = notes.length
+        ? ` · ${notes.length} design notes`
+        : "";
+    if (!notes.length) {
+        el.innerHTML = '<li class="muted">✓ No design concerns flagged.</li>';
+        return;
+    }
+    el.innerHTML = notes.map((n) => `
+        <li class="${escapeHtml(n.severity || 'info')}">
+            <code>${escapeHtml(n.code || '')}</code>
+            ${n.mission_id ? `<span class="muted small">[${escapeHtml(n.mission_id)}]</span> ` : ''}
+            ${escapeHtml(n.message)}
+            ${n.suggestion ? `<div class="muted small">→ ${escapeHtml(n.suggestion)}</div>` : ""}
+        </li>
+    `).join("");
+}
+
 function renderPlaytest(playtest) {
     const el = $("#playtest");
     if (!el) return;
@@ -479,6 +506,19 @@ function renderPlaytest(playtest) {
 }
 
 // -------- FSM canvas drawing --------------------------------------------
+function ensureFsmLayout(missionIdx, bp) {
+    const cache = (fsmLayout[missionIdx] = fsmLayout[missionIdx] || {});
+    const c = $("#fsm");
+    const startY = 40;
+    const dy = Math.max(60, (c.height - 80) / Math.max(1, bp.fsm.states.length));
+    bp.fsm.states.forEach((n, i) => {
+        if (!cache[n.id]) {
+            cache[n.id] = { x: c.width / 2, y: startY + i * dy };
+        }
+    });
+    return cache;
+}
+
 function drawFsm(bp) {
     if (!bp) return;
     $("#fsm-mission-label").textContent = "Mission: " + bp.brief.title;
@@ -487,13 +527,7 @@ function drawFsm(bp) {
     ctx.clearRect(0, 0, c.width, c.height);
     const nodes = bp.fsm.states;
     const initial = bp.fsm.initial;
-
-    // Simple vertical layout.
-    const marginX = 60, startY = 40, dy = Math.max(70, (c.height - 80) / nodes.length);
-    const positions = {};
-    nodes.forEach((n, i) => {
-        positions[n.id] = { x: c.width / 2, y: startY + i * dy };
-    });
+    const positions = ensureFsmLayout(currentMissionIdx, bp);
 
     // Edges
     ctx.strokeStyle = "#58a6ff";
@@ -504,12 +538,10 @@ function drawFsm(bp) {
             if (!from || !to) return;
             ctx.beginPath();
             ctx.moveTo(from.x, from.y + 18);
-            // curve slightly so parallel edges don't overlap
             const cpx = from.x + (t.to === n.id ? 120 : 0);
             const cpy = (from.y + to.y) / 2;
             ctx.quadraticCurveTo(cpx, cpy, to.x, to.y - 18);
             ctx.stroke();
-            // arrowhead
             const ang = Math.atan2(to.y - 18 - cpy, to.x - cpx);
             ctx.beginPath();
             ctx.moveTo(to.x, to.y - 18);
@@ -529,7 +561,8 @@ function drawFsm(bp) {
         ctx.fillStyle = n.terminal ? (n.endType === "loser" ? "#6e1a1a" : "#1e4620") :
                         (n.id === initial ? "#1f3d63" : "#21262d");
         ctx.fill();
-        ctx.strokeStyle = "#30363d";
+        ctx.strokeStyle = (n.id === fsmSelected) ? "#58a6ff" : "#30363d";
+        ctx.lineWidth = (n.id === fsmSelected) ? 2 : 1;
         ctx.stroke();
         ctx.fillStyle = "#f0f6fc";
         ctx.font = "12px ui-monospace, monospace";
@@ -542,6 +575,152 @@ function drawFsm(bp) {
         }
     });
 }
+
+function fsmCanvasPoint(e) {
+    const c = $("#fsm");
+    const rect = c.getBoundingClientRect();
+    return {
+        x: (e.clientX - rect.left) * (c.width / rect.width),
+        y: (e.clientY - rect.top) * (c.height / rect.height),
+    };
+}
+
+function fsmHit(pt, bp) {
+    const positions = fsmLayout[currentMissionIdx] || {};
+    for (const n of bp.fsm.states) {
+        const p = positions[n.id];
+        if (!p) continue;
+        if (pt.x >= p.x - 90 && pt.x <= p.x + 90 &&
+            pt.y >= p.y - 18 && pt.y <= p.y + 18) {
+            return n;
+        }
+    }
+    return null;
+}
+
+// FSM editor bindings — installed once on the canvas element.
+(function installFsmEditor() {
+    const c = $("#fsm");
+    if (!c) return;
+    c.addEventListener("mousedown", (e) => {
+        if (!lastPlan) return;
+        const bp = lastPlan.blueprints[currentMissionIdx];
+        const hit = fsmHit(fsmCanvasPoint(e), bp);
+        if (hit) {
+            fsmSelected = hit.id;
+            const p = fsmLayout[currentMissionIdx][hit.id];
+            fsmDragging = { stateId: hit.id, dx: p.x, dy: p.y };
+            openFsmEditor(hit);
+            drawFsm(bp);
+        } else {
+            fsmSelected = null;
+            $("#fsm-edit").classList.add("hidden");
+            drawFsm(bp);
+        }
+    });
+    c.addEventListener("mousemove", (e) => {
+        if (!fsmDragging || !lastPlan) return;
+        const pt = fsmCanvasPoint(e);
+        fsmLayout[currentMissionIdx][fsmDragging.stateId] = {
+            x: Math.max(90, Math.min(c.width - 90, pt.x)),
+            y: Math.max(20, Math.min(c.height - 20, pt.y)),
+        };
+        drawFsm(lastPlan.blueprints[currentMissionIdx]);
+    });
+    c.addEventListener("mouseup", () => { fsmDragging = null; });
+    c.addEventListener("mouseleave", () => { fsmDragging = null; });
+})();
+
+function openFsmEditor(node) {
+    const panel = $("#fsm-edit");
+    panel.classList.remove("hidden");
+    $("#fsm-label").value = node.label || node.id;
+    $("#fsm-on-enter").value = (node.on_enter || []).join("\n");
+    $("#fsm-transitions").value = JSON.stringify(
+        (node.transitions || []).map((t) => ({
+            to: t.to, kind: t.kind, condition: t.condition,
+        })), null, 2,
+    );
+}
+
+$("#fsm-save-state")?.addEventListener("click", () => {
+    if (!lastPlan || !fsmSelected) return;
+    const bp = lastPlan.blueprints[currentMissionIdx];
+    const node = bp.fsm.states.find((s) => s.id === fsmSelected);
+    if (!node) return;
+    node.label = $("#fsm-label").value;
+    node.on_enter = $("#fsm-on-enter").value
+        .split("\n").map((l) => l.trim()).filter(Boolean);
+    try {
+        const parsed = JSON.parse($("#fsm-transitions").value);
+        if (Array.isArray(parsed)) {
+            node.transitions = parsed.map((t) => ({
+                to: t.to, kind: t.kind || "trigger",
+                condition: t.condition || "true",
+                description: t.description || "",
+            }));
+        }
+    } catch (e) {
+        alert("Invalid transitions JSON: " + e.message);
+        return;
+    }
+    drawFsm(bp);
+    addProgress(`edited state ${fsmSelected}`, "done");
+});
+
+$("#fsm-push")?.addEventListener("click", async () => {
+    if (!lastPlan) return;
+    addProgress("pushing FSM edits...", "running");
+    const r = await fetch("/plan/update", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Session-Id": getSessionId(),
+        },
+        body: JSON.stringify({ plan: lastPlan, regenerate: true }),
+    });
+    if (!r.ok) {
+        addProgress("✗ plan/update failed", "error");
+        return;
+    }
+    const payload = await r.json();
+    lastPlan = payload.plan;
+    renderResult({
+        ...payload,
+        errors: (payload.qa.findings || []).filter((f) => f.severity === "error").length,
+        warnings: (payload.qa.findings || []).filter((f) => f.severity === "warning").length,
+    });
+});
+
+$("#eden-sync")?.addEventListener("click", async () => {
+    if (!lastPlan) return;
+    const sqm = $("#eden-sqm").value.trim();
+    if (!sqm) return alert("Paste mission.sqm contents first");
+    addProgress("syncing from Eden...", "running");
+    const r = await fetch("/sync-from-eden", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Session-Id": getSessionId(),
+        },
+        body: JSON.stringify({
+            plan: lastPlan,
+            mission_index: currentMissionIdx,
+            sqm_text: sqm,
+        }),
+    });
+    if (!r.ok) {
+        addProgress("✗ eden sync failed", "error");
+        return;
+    }
+    const payload = await r.json();
+    lastPlan = payload.plan;
+    renderResult({
+        ...payload,
+        errors: (payload.qa.findings || []).filter((f) => f.severity === "error").length,
+        warnings: (payload.qa.findings || []).filter((f) => f.severity === "warning").length,
+    });
+});
 
 // -------- Map preview (top-down, view-only) -----------------------------
 //

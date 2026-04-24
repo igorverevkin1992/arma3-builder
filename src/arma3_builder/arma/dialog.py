@@ -22,17 +22,23 @@ def _topic_name(blueprint: MissionBlueprint) -> str:
     return f"A3B_topic_{blueprint.mission_id or 'mission'}"
 
 
-def generate_sentences_bikb(blueprint: MissionBlueprint) -> str:
+def generate_sentences_bikb(
+    blueprint: MissionBlueprint,
+    *,
+    audio_paths: dict[str, str] | None = None,
+) -> str:
     """Return the contents of ``sentences.bikb``.
 
     Arma's KB parser expects raw `class <topic>` blocks at the top of the
-    file (no outer wrapper). Each sentence carries `text`, an empty `speech[]`
-    array (placeholder for VO files) and an empty `Arguments` block — that
-    is the minimum schema the engine accepts.
+    file (no outer wrapper). Each sentence carries `text`, a `speech[]`
+    array pointing at the OGG TTS rendered for that line (or empty array
+    if no audio was synthesised), and an empty `Arguments` block — the
+    minimum schema the engine accepts.
     """
     if not blueprint.dialogue:
         return "// No dialogue lines for this mission.\n"
     topic = _topic_name(blueprint)
+    audio_paths = audio_paths or {}
     lines: list[str] = [
         f"class {topic}",
         "{",
@@ -40,10 +46,12 @@ def generate_sentences_bikb(blueprint: MissionBlueprint) -> str:
     ]
     for d in blueprint.dialogue:
         text = d.text.replace('"', '""')
+        sound = audio_paths.get(d.id, "")
+        speech_arr = f'{{"{sound}"}}' if sound else "{}"
         lines.append(
             f'    class {d.id} {{\n'
             f'        text = "{text}";\n'
-            f'        speech[] = {{}};\n'
+            f'        speech[] = {speech_arr};\n'
             f'        class Arguments {{}};\n'
             f'    }};'
         )

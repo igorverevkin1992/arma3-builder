@@ -54,7 +54,10 @@ class ConfigMasterAgent(Agent):
                     resolved_addons.add(info.addon)
             blueprint.addons = sorted(resolved_addons)  # safe: deep-copied
 
-            ext = generate_mission_description_ext(blueprint)
+            ext = generate_mission_description_ext(
+                blueprint,
+                ace_settings=getattr(plan.brief, "ace_settings", None),
+            )
             artifacts.append(GeneratedArtifact(
                 relative_path=f"missions/{mdir}/description.ext",
                 content=ext,

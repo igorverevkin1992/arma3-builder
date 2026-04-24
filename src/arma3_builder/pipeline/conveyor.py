@@ -16,6 +16,7 @@ from pathlib import Path
 from ..agents import (
     AgentContext,
     ConfigMasterAgent,
+    CriticAgent,
     NarrativeAgent,
     OrchestratorAgent,
     QAAgent,
@@ -83,6 +84,7 @@ class Pipeline:
         self.scripter = ScripterAgent()
         self.config_master = ConfigMasterAgent()
         self.qa = QAAgent()
+        self.critic = CriticAgent()
 
     def make_context(self) -> AgentContext:
         # Per-request registry: the `unknown` set is mutable and gets
@@ -197,6 +199,17 @@ class Pipeline:
         # but do not block pipeline success — they are advisory layers.
         pacing = analyse_campaign(plan).to_dict()
         playtest = [r.to_dict() for r in playtest_campaign(plan)]
+        # Phase-C: critic runs last so it sees the fully-expanded plan
+        # (ConfigMaster has inflated addons, Scripter has exercised FSM
+        # wiring side-effects). Non-blocking.
+        try:
+            critic_notes = [
+                n.model_dump()
+                for n in await self.critic.run(plan, ctx)
+            ]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("critic_run_failed", error=str(exc))
+            critic_notes = []
         usage = usage_accumulator.drain().to_dict()
 
         return GenerationResult(
@@ -208,6 +221,7 @@ class Pipeline:
             pacing=pacing,
             playtest=playtest,
             usage=usage,
+            critic_notes=critic_notes,
         )
 
 

@@ -1,5 +1,6 @@
 from .base import Agent, AgentContext
 from .config_master import ConfigMasterAgent
+from .critic import CriticAgent
 from .narrative import NarrativeAgent
 from .orchestrator import OrchestratorAgent
 from .qa import QAAgent
@@ -9,6 +10,7 @@ __all__ = [
     "Agent",
     "AgentContext",
     "ConfigMasterAgent",
+    "CriticAgent",
     "NarrativeAgent",
     "OrchestratorAgent",
     "QAAgent",

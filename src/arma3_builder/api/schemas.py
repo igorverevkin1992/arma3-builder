@@ -37,6 +37,21 @@ class GenerateResponse(BaseModel):
     pacing: dict[str, Any] | None = None
     playtest: list[dict[str, Any]] | None = None
     usage: dict[str, Any] | None = None
+    # Phase-C additions.
+    critic_notes: list[dict[str, Any]] | None = None
+
+
+class PlanUpdateRequest(BaseModel):
+    """Accept a user-edited CampaignPlan + optionally regenerate artefacts."""
+    plan: CampaignPlan
+    regenerate: bool = True
+
+
+class SyncFromEdenRequest(BaseModel):
+    """Round-trip an Eden-edited mission.sqm back into the blueprint."""
+    plan: CampaignPlan
+    mission_index: int = 0
+    sqm_text: str
 
 
 class PreviewResponse(BaseModel):

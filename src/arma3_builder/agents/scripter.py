@@ -13,6 +13,11 @@ from ..arma import (
     generate_init_sqf,
     generate_statemachine_sqf,
 )
+from ..arma.arsenal import (
+    arsenal_addons,
+    generate_arsenal_client_sqf,
+    generate_arsenal_server_sqf,
+)
 from ..arma.behaviour import generate_bind_behaviour_sqf
 from ..arma.compositions import expand_all
 from ..arma.cutscene import cutscene_paths, wire_cutscenes_into_fsm
@@ -43,6 +48,7 @@ from ..arma.worldflags import (
     generate_world_flags_reader_sqf,
     wire_world_flag_writes,
 )
+from ..tts import synthesise_dialogue
 from ..config import get_settings
 from ..protocols import (
     GeneratedArtifact,
@@ -209,12 +215,51 @@ class ScripterAgent(Agent):
                 kind="sqf",
             ))
 
+        # Phase C — virtual arsenals (ACE or BIS).
+        if blueprint.arsenals:
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/functions/fn_spawnArsenals.sqf",
+                content=generate_arsenal_server_sqf(blueprint),
+                kind="sqf",
+            ))
+            artifacts.append(GeneratedArtifact(
+                relative_path=f"{prefix}/functions/fn_initArsenalsClient.sqf",
+                content=generate_arsenal_client_sqf(blueprint),
+                kind="sqf",
+            ))
+
         # Dialog / KB system (only when the blueprint actually has lines).
         if blueprint.dialogue:
+            # TTS pass. The null provider writes 0-byte placeholder OGGs
+            # so the bikb's speech[] array always points at a real path.
+            from pathlib import Path
+
+            tmp_mission = Path("/tmp/arma3b_tts") / (blueprint.mission_id or "mission")
+            lines = [(d.id, d.text) for d in blueprint.dialogue]
+            audio_map: dict[str, str] = {}
+            try:
+                for entry in synthesise_dialogue(lines, mission_dir=tmp_mission):
+                    audio_map[entry.line_id] = entry.sound_path
+                    # Pull the generated audio into the output artefacts too.
+                    abs_path = tmp_mission / entry.sound_path
+                    if abs_path.exists():
+                        # Binary placeholder; we stash the path in `content`
+                        # as a base64 string only when we actually need to
+                        # ship audio. Null provider writes empty bytes, so
+                        # we skip adding the artefact to keep the tree clean.
+                        if abs_path.stat().st_size > 0:
+                            artifacts.append(GeneratedArtifact(
+                                relative_path=f"{prefix}/{entry.sound_path}",
+                                content="",                  # binary placeholder
+                                kind="txt",
+                            ))
+            except Exception as exc:  # noqa: BLE001
+                self.log.warning("tts_synthesise_failed", error=str(exc))
+
             artifacts.extend([
                 GeneratedArtifact(
                     relative_path=f"{prefix}/sentences.bikb",
-                    content=generate_sentences_bikb(blueprint),
+                    content=generate_sentences_bikb(blueprint, audio_paths=audio_map),
                     kind="bikb",
                 ),
                 GeneratedArtifact(

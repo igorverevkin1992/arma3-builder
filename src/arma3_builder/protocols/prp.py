@@ -49,6 +49,9 @@ class CampaignBrief(BaseModel):
     missions: list[MissionBrief] = Field(default_factory=list)
     # Phase B: recurring NPCs shared across missions.
     characters: list["Character"] = Field(default_factory=list)
+    # Phase C: ACE configuration — when present, ConfigMaster emits the
+    # ace_settings block into every mission's description.ext.
+    ace_settings: "AceSettings | None" = None
 
     @field_validator("name")
     @classmethod
@@ -342,6 +345,63 @@ class ReinforcementWave(BaseModel):
     max_count: int = 1                       # spawn up to N copies, one per trigger
 
 
+# --------------------------------------------------------------------------- #
+# Phase C — critic findings, arsenal, ACE medical
+# --------------------------------------------------------------------------- #
+
+
+class VirtualArsenal(BaseModel):
+    """Player-accessible arsenal — either ACE or BIS flavour.
+
+    ``ace`` uses the ACE3 arsenal with proper whitelisting; ``bis`` uses
+    ``BIS_fnc_arsenal``. The object is spawned at ``position`` (or near
+    the first player if unset) and gets an ``addAction`` entry.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    kind: Literal["ace", "bis"] = "bis"
+    object_classname: str = "Box_NATO_Ammo_F"
+    position: tuple[float, float, float] | None = None   # None -> near player
+    faction_whitelist: str = ""              # empty = unrestricted
+
+
+class AceSettings(BaseModel):
+    """ACE3 framework configuration embedded into description.ext.
+
+    The Narrative Director (or a designer hint) declares ACE options at
+    campaign or mission level; Config Master writes them under the
+    ``ace_settings`` class that ACE reads at mission load.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    medical_level: Literal["basic", "advanced"] = "advanced"
+    medical_enable_revive: bool = True
+    medical_respawn_behaviour: Literal["base", "position", "nonmedic"] = "base"
+    force_medical: bool = True
+    force_interaction: bool = True
+    force_advanced_ballistics: bool = False
+
+
+class CriticNote(BaseModel):
+    """One advisory finding from the Critic agent.
+
+    Non-blocking: the pipeline doesn't gate on these, but the UI surfaces
+    them prominently so designers see the "this is bland / unbalanced / …"
+    feedback before playtesting.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str                                # A3B4xx
+    severity: Literal["info", "warning"] = "info"
+    mission_id: str | None = None            # None = campaign-level
+    message: str
+    suggestion: str = ""
+
+
 class Loadout(BaseModel):
     """Gear assignment for a single player role."""
 
@@ -407,6 +467,7 @@ class MissionBlueprint(BaseModel):
     cutscenes: list[Cutscene] = Field(default_factory=list)
     music_cues: list[MusicCue] = Field(default_factory=list)
     world_flag_writes: list[WorldFlagWrite] = Field(default_factory=list)
+    arsenals: list[VirtualArsenal] = Field(default_factory=list)
     addons: list[str] = Field(default_factory=list)
 
 
@@ -504,7 +565,9 @@ class GenerationResult(BaseModel):
     pacing: dict[str, Any] | None = None
     playtest: list[dict[str, Any]] | None = None
     usage: dict[str, Any] | None = None
+    # Phase-C — design advisory notes from the Critic agent.
+    critic_notes: list[dict[str, Any]] | None = None
 
 
-# Resolve forward references (CampaignBrief -> Character).
+# Resolve forward references (CampaignBrief -> Character, AceSettings).
 CampaignBrief.model_rebuild()
