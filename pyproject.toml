@@ -22,6 +22,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Gemini works out of the box via httpx — no extra SDK required. The other
+# entries are only needed if you switch ARMA3_LLM_PROVIDER away from gemini.
 llm = [
     "anthropic>=0.34",
     "openai>=1.30",

@@ -18,6 +18,11 @@ from typing import Any
 # Model → (input_per_1k_usd, output_per_1k_usd) snapshot. Keep entries
 # conservative; unknown models fall through to zero cost + a "uncosted" tag.
 PRICING: dict[str, tuple[float, float]] = {
+    # Google Gemini 2.5 (default provider). Prices per 1k tokens, ≤200k prompt
+    # tier — the long-context tier is ~2× higher.
+    "gemini-2.5-pro":         (0.00125, 0.010),
+    "gemini-2.5-flash":       (0.0003,  0.0025),
+    "gemini-2.5-flash-lite":  (0.0001,  0.0004),
     # Anthropic (Opus/Sonnet/Haiku). Sonnet mid-tier prices shown.
     "claude-opus-4-7":   (0.015, 0.075),
     "claude-opus-4-6":   (0.015, 0.075),

@@ -9,7 +9,7 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ProviderName = Literal["anthropic", "openai", "ollama", "stub"]
+ProviderName = Literal["gemini", "anthropic", "openai", "ollama", "stub"]
 RagBackend = Literal["memory", "qdrant"]
 
 
@@ -23,15 +23,20 @@ class Settings(BaseSettings):
 
     llm_provider: ProviderName = Field(default="stub")
 
+    gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     ollama_base_url: str = Field(default="http://localhost:11434")
+    # Gemini base URL — override only for proxies / Vertex AI.
+    gemini_base_url: str = Field(default="https://generativelanguage.googleapis.com")
 
-    model_orchestrator: str = Field(default="claude-opus-4-7")
-    model_narrative: str = Field(default="claude-sonnet-4-6")
-    model_scripter: str = Field(default="claude-sonnet-4-6")
-    model_config_master: str = Field(default="claude-sonnet-4-6")
-    model_qa: str = Field(default="llama3:8b")
+    # Defaults are Gemini models. To use Anthropic/OpenAI/Ollama instead,
+    # set ARMA3_LLM_PROVIDER and override the per-role model envs.
+    model_orchestrator: str = Field(default="gemini-2.5-pro")
+    model_narrative: str = Field(default="gemini-2.5-pro")
+    model_scripter: str = Field(default="gemini-2.5-flash")
+    model_config_master: str = Field(default="gemini-2.5-flash")
+    model_qa: str = Field(default="gemini-2.5-flash-lite")
 
     rag_backend: RagBackend = Field(default="memory")
     qdrant_url: str = Field(default="http://localhost:6333")

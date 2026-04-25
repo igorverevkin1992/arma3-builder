@@ -74,6 +74,8 @@ class LLMClient:
         started = time.monotonic()
         if self.provider == "stub":
             rsp = await self._stub(model=model, system=system, user=user, json_mode=json_mode)
+        elif self.provider == "gemini":
+            rsp = await self._gemini(model, system, user, temperature, max_tokens, json_mode)
         elif self.provider == "anthropic":
             rsp = await self._anthropic(model, system, user, temperature, max_tokens, json_mode)
         elif self.provider == "openai":
@@ -96,6 +98,54 @@ class LLMClient:
         return rsp
 
     # ------------------------------------------------------------------ providers
+
+    async def _gemini(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        temperature: float,
+        max_tokens: int,
+        json_mode: bool,
+    ) -> LLMResponse:
+        """Call Google's Gemini via the public Generative Language REST API.
+
+        Uses httpx directly so we don't pull a heavyweight client SDK. The
+        endpoint shape is `v1beta/models/{model}:generateContent`. Auth is via
+        the ``key`` query parameter (API key from AI Studio).
+        """
+        s = get_settings()
+        api_key = s.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY not configured")
+
+        # Gemini does not have a dedicated `system` slot in v1beta — instead
+        # we pass `systemInstruction`. Older models that ignore it fall back
+        # to a prepended user message; that's a known compatibility quirk.
+        body: dict[str, Any] = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {
+                "temperature": temperature,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+        if json_mode:
+            body["generationConfig"]["responseMimeType"] = "application/json"
+
+        url = f"{s.gemini_base_url.rstrip('/')}/v1beta/models/{model}:generateContent"
+        async with httpx.AsyncClient(timeout=120) as http:
+            r = await http.post(url, params={"key": api_key}, json=body)
+            r.raise_for_status()
+            data = r.json()
+
+        # Defensive parse — Gemini can omit `candidates` on safety blocks.
+        candidates = data.get("candidates") or []
+        text = ""
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+        return LLMResponse(text=text, raw=data, model=model, provider="gemini")
 
     async def _anthropic(
         self,
@@ -211,8 +261,12 @@ def _extract_tokens(raw: dict, prompt_text: str, reply_text: str) -> tuple[int, 
     exposed (Ollama older versions, stub), we estimate from text length so
     the cost column is never empty.
     """
+    if not isinstance(raw, dict):
+        return (estimate_tokens_from_text(prompt_text),
+                estimate_tokens_from_text(reply_text))
     # Anthropic: raw["usage"] = {"input_tokens": N, "output_tokens": M}
-    u = raw.get("usage") if isinstance(raw, dict) else None
+    # OpenAI:    raw["usage"] = {"prompt_tokens": N, "completion_tokens": M}
+    u = raw.get("usage")
     if isinstance(u, dict):
         in_tok = (u.get("input_tokens")
                   or u.get("prompt_tokens")
@@ -224,12 +278,18 @@ def _extract_tokens(raw: dict, prompt_text: str, reply_text: str) -> tuple[int, 
                    or 0)
         if in_tok or out_tok:
             return int(in_tok), int(out_tok)
-    # Ollama: top-level prompt_eval_count / eval_count
-    if isinstance(raw, dict):
-        in_tok = raw.get("prompt_eval_count", 0)
-        out_tok = raw.get("eval_count", 0)
+    # Gemini: raw["usageMetadata"] = {"promptTokenCount": N, "candidatesTokenCount": M, ...}
+    gm = raw.get("usageMetadata")
+    if isinstance(gm, dict):
+        in_tok = gm.get("promptTokenCount", 0)
+        out_tok = gm.get("candidatesTokenCount", 0)
         if in_tok or out_tok:
             return int(in_tok), int(out_tok)
+    # Ollama: top-level prompt_eval_count / eval_count
+    in_tok = raw.get("prompt_eval_count", 0)
+    out_tok = raw.get("eval_count", 0)
+    if in_tok or out_tok:
+        return int(in_tok), int(out_tok)
     return estimate_tokens_from_text(prompt_text), estimate_tokens_from_text(reply_text)
 
 

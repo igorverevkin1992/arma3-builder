@@ -69,6 +69,30 @@ curl -X POST http://localhost:8000/generate \
      -d @examples/sample_campaign.json
 ```
 
+### LLM provider
+
+Default is **Google Gemini 2.5** (no SDK dependency — talks to the public
+Generative Language REST API via `httpx`). Get an API key from
+[Google AI Studio](https://aistudio.google.com/apikey) and:
+
+```bash
+export ARMA3_LLM_PROVIDER=gemini
+export GEMINI_API_KEY=AIza...
+```
+
+Per-role model defaults (override via `ARMA3_MODEL_*` envs):
+
+| Role             | Default model           | Why                                  |
+|------------------|-------------------------|--------------------------------------|
+| Orchestrator     | `gemini-2.5-pro`        | Long context + structured planning   |
+| Narrative        | `gemini-2.5-pro`        | Story / FSM coherence                |
+| Scripter         | `gemini-2.5-flash`      | Fast SQF emission                    |
+| Config Master    | `gemini-2.5-flash`      | Fast SQM/description.ext emission    |
+| QA               | `gemini-2.5-flash-lite` | Cheap repair-loop critic             |
+
+Anthropic (Claude), OpenAI (GPT-4o), and local Ollama remain supported as
+opt-in fallbacks: switch `ARMA3_LLM_PROVIDER` and override the model envs.
+
 The output campaign is written to `./output/<campaign_slug>/` with the directory layout
 specified by Bohemia Interactive for SP / coop campaigns.
 
