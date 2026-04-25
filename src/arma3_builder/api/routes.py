@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,6 @@ from ..arma.launcher import build_launch_payload
 from ..pipeline import Pipeline, PipelineConfig
 from ..pipeline.diff import diff_artifacts
 from ..pipeline.refine import refine_plan
-from ..protocols import CampaignBrief, CampaignPlan, MissionBlueprint
 from ..qa.score import score_campaign
 from ..templates import get_template, list_templates
 from .events import EventBus
@@ -36,7 +35,11 @@ _pipeline = Pipeline()
 # Per-session run cache keyed by `X-Session-Id` header (UI sends it). Falls
 # back to a single global slot for backwards-compat curl users — that path
 # is documented as not safe for concurrent calls.
-_session_runs: dict[str, dict[str, Any]] = {}
+#
+# Bounded LRU to prevent unbounded memory growth: clients can otherwise
+# allocate arbitrary slots by varying the X-Session-Id header.
+_SESSION_CACHE_MAX = 64
+_session_runs: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _DEFAULT_SESSION = "_default"
 
 
@@ -50,10 +53,17 @@ def _session_key(req_headers: dict[str, str] | None = None) -> str:
 
 def _store_run(session: str, *, plan, artifacts) -> None:
     _session_runs[session] = {"plan": plan, "artifacts": artifacts}
+    _session_runs.move_to_end(session)
+    while len(_session_runs) > _SESSION_CACHE_MAX:
+        _session_runs.popitem(last=False)
 
 
 def _previous_run(session: str) -> dict[str, Any]:
-    return _session_runs.get(session, {})
+    run = _session_runs.get(session)
+    if run is not None:
+        _session_runs.move_to_end(session)
+        return run
+    return {}
 
 
 @router.get("/health")
@@ -160,8 +170,15 @@ async def generate_stream(req: GenerateRequest, request: Request) -> StreamingRe
                 task.cancel()
                 try:
                     await task
-                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                except asyncio.CancelledError:
                     pass
+                except Exception:  # noqa: BLE001
+                    # Cleanup-time errors must not propagate (the response is
+                    # already gone), but they shouldn't be silently swallowed.
+                    import logging
+                    logging.getLogger(__name__).exception(
+                        "Background SSE task raised during cleanup"
+                    )
 
     return StreamingResponse(streamer(), media_type="text/event-stream")
 
@@ -384,21 +401,35 @@ async def files_list(rel: str = Query(default="")) -> dict[str, Any]:
 
     Returns directories first, then files, each with `name`, `path` (relative
     to output_dir), `kind` ("dir"|"file"), and `size` for files.
+
+    Race-tolerant: if the directory or a child disappears between the listing
+    and the per-entry stat, we drop that entry rather than crashing.
     """
     target = _safe_output_path(rel)
-    if not target.exists():
-        return {"path": rel, "entries": []}
-    if target.is_file():
-        raise HTTPException(status_code=400, detail="not a directory")
     from ..config import get_settings
     base = Path(get_settings().output_dir).resolve()
+
+    try:
+        children = sorted(
+            target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())
+        )
+    except FileNotFoundError:
+        return {"path": rel, "entries": []}
+    except NotADirectoryError as exc:
+        raise HTTPException(status_code=400, detail="not a directory") from exc
+
     out: list[dict[str, Any]] = []
-    for child in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+    for child in children:
+        try:
+            is_dir = child.is_dir()
+            size = child.stat().st_size if not is_dir else None
+        except (FileNotFoundError, PermissionError):
+            continue
         out.append({
             "name": child.name,
             "path": str(child.relative_to(base)),
-            "kind": "dir" if child.is_dir() else "file",
-            "size": child.stat().st_size if child.is_file() else None,
+            "kind": "dir" if is_dir else "file",
+            "size": size,
         })
     return {"path": rel, "entries": out}
 
@@ -409,20 +440,25 @@ async def files_read(rel: str = Query(...)) -> str:
 
     Caps at 256 KB so the UI doesn't blow up on giant binaries; larger
     files return a placeholder describing the size and pointing the user
-    at the absolute path.
+    at the absolute path. Reads the file in one syscall sequence to avoid
+    TOCTOU between stat and read.
     """
     target = _safe_output_path(rel)
-    if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="file not found")
     cap = 256 * 1024
-    size = target.stat().st_size
-    if size > cap:
-        return (
-            f"// File too large to render in the UI ({size} bytes).\n"
-            f"// Open it locally at: {target}\n"
-        )
     try:
+        size = target.stat().st_size
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="file not found")
+        if size > cap:
+            return (
+                f"// File too large to render in the UI ({size} bytes).\n"
+                f"// Open it locally at: {target}\n"
+            )
         return target.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="file not found") from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="permission denied") from exc
     except UnicodeDecodeError:
         return f"// Binary file ({size} bytes) — open with an external tool.\n"
 
