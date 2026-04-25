@@ -15,7 +15,6 @@ import json
 import math
 import random
 from dataclasses import dataclass
-from pathlib import Path
 
 from ..config import data_dir
 
@@ -53,7 +52,14 @@ def load_map(world: str) -> MapData | None:
     path = data_dir() / "maps" / f"{world}.json"
     if not path.exists():
         return None
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Skipping malformed map seed %s: %s", path, exc
+        )
+        return None
     pois = [
         PointOfInterest(
             id=p["id"], kind=p["kind"],

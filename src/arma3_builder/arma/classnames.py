@@ -68,11 +68,20 @@ class ClassnameRegistry:
         reg = cls()
         if not directory.exists():
             return reg
+        import logging
+        log = logging.getLogger(__name__)
         for path in sorted(directory.glob("*.json")):
-            with path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except (OSError, json.JSONDecodeError) as exc:
+                log.warning("Skipping malformed classname seed %s: %s", path, exc)
+                continue
             for entry in data.get("classnames", []):
-                reg.register(ClassnameInfo(**entry))
+                try:
+                    reg.register(ClassnameInfo(**entry))
+                except TypeError as exc:
+                    log.warning("Skipping bad classname entry in %s: %s", path, exc)
         return reg
 
     def take_unknowns(self) -> list[str]:

@@ -92,7 +92,7 @@ def generate_init_player_local(blueprint: MissionBlueprint) -> str:
         '0 = [] spawn { call (compile preprocessFileLineNumbers "briefing.sqf") };\n'
         "\n"
         '// Persistent local UI hint.\n'
-        f'hint parseText "<t size=\'1.2\'>{_safe(blueprint.brief.title)}</t>";\n'
+        f'hint parseText "<t size=\'1.2\'>{_safe_xml(blueprint.brief.title)}</t>";\n'
     )
 
 
@@ -106,4 +106,22 @@ def macros_header() -> str:
 
 
 def _safe(s: str) -> str:
-    return s.replace('"', '""').replace("\n", " ").strip()
+    """Make `s` safe to embed inside an SQF double-quoted string literal.
+
+    SQF uses doubled `""` to escape an embedded double quote. We also strip
+    backslash-pairs and collapse newlines so a malicious title can't terminate
+    the string and inject SQF tokens.
+    """
+    return (
+        s.replace("\\", "\\\\")
+         .replace('"', '""')
+         .replace("\r", " ")
+         .replace("\n", " ")
+         .strip()
+    )
+
+
+def _safe_xml(s: str) -> str:
+    """Variant for content embedded in `parseText` (Arma's XML-ish markup)."""
+    from xml.sax.saxutils import escape as _xml_escape
+    return _safe(_xml_escape(s))
