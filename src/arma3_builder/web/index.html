@@ -1,133 +1,410 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
-    <title>arma3-builder</title>
+    <title>arma3-builder · campaign studio</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Multi-agent AI campaign generator for Arma 3">
     <link rel="stylesheet" href="/ui/styles.css">
+    <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23238636'/><text x='16' y='22' text-anchor='middle' font-family='monospace' font-size='14' fill='white' font-weight='bold'>A3</text></svg>">
 </head>
 <body>
-<header>
-    <h1>arma3-builder <span class="tag">multi-agent campaign generator</span></h1>
-    <p class="sub">Prompt it, pick a template, or paste a brief. The pipeline handles SQF, SQM, description.ext, Campaign flow, QA and packaging.</p>
+
+<!-- Top bar ----------------------------------------------------------- -->
+<header class="topbar">
+    <div class="topbar__left">
+        <a href="#" class="logo">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15"/>
+                <path d="M12 4 L20 20 L12 16 L4 20 Z" fill="currentColor"/>
+            </svg>
+            <span><b>arma3</b><span class="muted">·builder</span></span>
+        </a>
+        <span class="badge" id="run-status">idle</span>
+    </div>
+    <div class="topbar__right">
+        <button class="btn btn--ghost" id="cmd-open" title="Command palette (Ctrl/⌘+K)">
+            <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M9.5 3a6.5 6.5 0 1 0 5.13 10.5l4.94 4.94a1 1 0 0 0 1.41-1.41l-4.94-4.94A6.5 6.5 0 0 0 9.5 3Zm0 2a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Z"/></svg>
+            <span>Search · ⌘K</span>
+        </button>
+        <button class="btn btn--ghost" id="theme-toggle" title="Toggle theme">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36A6 6 0 0 1 12 3z"/></svg>
+        </button>
+        <a class="btn btn--ghost" href="https://github.com/igorverevkin1992/arma3-builder" target="_blank" rel="noopener" title="Source">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.42c.58.1.79-.25.79-.56v-2.16c-3.2.7-3.88-1.36-3.88-1.36-.53-1.34-1.3-1.7-1.3-1.7-1.06-.72.08-.7.08-.7 1.17.08 1.79 1.2 1.79 1.2 1.04 1.78 2.73 1.27 3.4.97.1-.75.4-1.27.74-1.56-2.55-.29-5.24-1.27-5.24-5.66 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17a10.94 10.94 0 0 1 5.74 0c2.18-1.48 3.14-1.17 3.14-1.17.63 1.58.24 2.75.12 3.04.74.8 1.18 1.82 1.18 3.07 0 4.4-2.69 5.36-5.26 5.65.41.36.78 1.06.78 2.13v3.16c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"/></svg>
+        </a>
+    </div>
 </header>
 
-<main>
-    <section class="panel left">
-        <h2>1. Describe</h2>
-        <div class="tabs">
-            <button class="tab active" data-tab="wizard">Wizard</button>
-            <button class="tab" data-tab="prompt">Prompt</button>
-            <button class="tab" data-tab="template">Template</button>
-            <button class="tab" data-tab="brief">Raw brief</button>
-        </div>
+<!-- Sidebar ----------------------------------------------------------- -->
+<aside class="sidebar">
+    <nav class="nav" aria-label="Primary">
+        <a href="#" class="nav__item active" data-view="new">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <span>New</span>
+        </a>
+        <a href="#" class="nav__item" data-view="editor" data-requires="plan">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 6h18v2H3zM3 11h18v2H3zM3 16h12v2H3z"/></svg>
+            <span>Editor</span>
+        </a>
+        <a href="#" class="nav__item" data-view="templates">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 5h7v7H3zm11 0h7v4h-7zm0 6h7v8h-7zM3 14h7v7H3z"/></svg>
+            <span>Templates</span>
+        </a>
+        <a href="#" class="nav__item" data-view="files" data-requires="plan">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            <span>Files</span>
+        </a>
+        <a href="#" class="nav__item" data-view="deploy" data-requires="plan">
+            <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M5 21q-.825 0-1.412-.587T3 19V5q0-.825.587-1.412T5 3h6v2H5v14h14v-6h2v6q0 .825-.587 1.412T19 21zM9.4 17 8 15.6 17.6 6H14V4h7v7h-2V7.4z"/></svg>
+            <span>Deploy</span>
+        </a>
+    </nav>
 
-        <div class="tab-body" data-tab="wizard">
-            <ol id="wizard-steps" class="wizard-steps">
-                <li class="active">1. Scope</li>
-                <li>2. Theatre</li>
-                <li>3. Team</li>
-                <li>4. Review</li>
-            </ol>
-            <div id="wizard-panel"></div>
-            <div class="wizard-nav">
-                <button id="wizard-back" class="secondary">← Back</button>
-                <button id="wizard-next" class="primary">Next →</button>
+    <div class="sidebar__footer">
+        <div class="status-card">
+            <div class="status-card__label">last run</div>
+            <div class="status-card__value" id="last-run-summary">—</div>
+        </div>
+    </div>
+</aside>
+
+<!-- Main views -------------------------------------------------------- -->
+<main class="main" id="main">
+
+    <!-- VIEW: New / dashboard -->
+    <section class="view view--new" data-view="new">
+        <div class="hero">
+            <h1 class="hero__title">What are you building today?</h1>
+            <p class="hero__sub">Describe a campaign in plain English, pick a template, or paste a brief.</p>
+
+            <form class="hero__prompt" id="prompt-form">
+                <textarea id="prompt" rows="3" autofocus
+                    placeholder="Coop MARSOC raid on Tanoa. Mission 1 — destroy the SAM at night.&#10;Mission 2 — recover the downed pilot from a hostile village."></textarea>
+                <div class="hero__prompt-actions">
+                    <span class="muted small" id="prompt-hint">Press <kbd>⌘</kbd>+<kbd>Enter</kbd> to generate</span>
+                    <button class="btn btn--primary" type="submit" id="generate-btn">
+                        <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M5 3v18l15-9z"/></svg>
+                        Generate
+                    </button>
+                </div>
+            </form>
+
+            <div class="quick-cards">
+                <button class="qcard" data-quick="template">
+                    <div class="qcard__icon" aria-hidden="true">📐</div>
+                    <h3>Template gallery</h3>
+                    <p>Six battle-tested archetypes. Convoy, Defend, Sabotage, CSAR, HVT, Recon.</p>
+                </button>
+                <button class="qcard" data-quick="brief">
+                    <div class="qcard__icon" aria-hidden="true">📋</div>
+                    <h3>Paste a brief</h3>
+                    <p>Already have a structured CampaignBrief JSON? Drop it in.</p>
+                </button>
+                <button class="qcard" data-quick="last">
+                    <div class="qcard__icon" aria-hidden="true">↻</div>
+                    <h3>Continue last</h3>
+                    <p>Reopen the most recent campaign you generated.</p>
+                </button>
             </div>
         </div>
 
-        <div class="tab-body hidden" data-tab="prompt">
-            <textarea id="prompt" rows="6" placeholder="Coop MARSOC raid on Tanoa. Mission 1 — destroy SAM at night. Mission 2 — recover downed pilot."></textarea>
+        <!-- Live progress (visible while a run is streaming) -->
+        <div class="progress-card hidden" id="progress-card">
+            <div class="progress-card__header">
+                <span class="dot dot--running"></span>
+                <h3>Generating…</h3>
+                <span class="muted small" id="progress-elapsed">0s</span>
+            </div>
+            <div class="progress-bar"><div class="progress-bar__fill" id="progress-bar-fill"></div></div>
+            <ol id="progress-log" class="progress-log"></ol>
         </div>
 
-        <div class="tab-body hidden" data-tab="template">
-            <select id="template-id"></select>
-            <div id="template-params"></div>
+        <div class="brief-fallback hidden" id="brief-fallback">
+            <h3>Paste a CampaignBrief JSON</h3>
+            <textarea id="brief" rows="14" placeholder='{"name": "...", "missions": [ ... ]}'></textarea>
+            <button class="btn btn--primary" id="brief-generate">Generate from brief</button>
         </div>
-
-        <div class="tab-body hidden" data-tab="brief">
-            <textarea id="brief" rows="12" placeholder='{"name":"…","missions":[…]}'></textarea>
-        </div>
-
-        <button id="generate" class="primary">Generate</button>
-        <button id="preview" class="secondary">Preview FSM only</button>
     </section>
 
-    <section class="panel center">
-        <h2>2. Progress</h2>
-        <ol id="progress" class="progress"></ol>
+    <!-- VIEW: Editor -->
+    <section class="view view--editor hidden" data-view="editor">
+        <header class="view__header">
+            <div>
+                <h2 id="editor-title">Untitled campaign</h2>
+                <p class="muted small" id="editor-subtitle">No campaign loaded yet.</p>
+            </div>
+            <div class="view__header-actions">
+                <button class="btn btn--ghost" id="refine-open">
+                    <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4v2H5v14h14v-4z"/><path fill="currentColor" d="m13.5 7.5 3 3-7 7H6.5v-3z"/></svg>
+                    Refine
+                </button>
+                <button class="btn btn--primary" id="regen-btn">
+                    <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M17.65 6.35A8 8 0 1 0 19.32 15h-2.1a6 6 0 1 1-1.13-7.24L13 11h7V4z"/></svg>
+                    Regenerate
+                </button>
+            </div>
+        </header>
 
-        <div id="result" class="hidden">
-            <h3>Quality score</h3>
-            <div id="score" class="score-grid"></div>
+        <nav class="subnav" role="tablist">
+            <button class="subnav__tab active" data-tab="overview" role="tab">Overview</button>
+            <button class="subnav__tab" data-tab="missions" role="tab">Missions</button>
+            <button class="subnav__tab" data-tab="code" role="tab">Code</button>
+            <button class="subnav__tab" data-tab="deploy" role="tab">Deploy</button>
+        </nav>
 
-            <h3>Cost <span id="usage-summary" class="muted"></span></h3>
-            <div id="usage" class="usage-grid"></div>
-
-            <h3>QA report <span id="qa-summary" class="muted"></span></h3>
-            <ul id="findings" class="findings"></ul>
-
-            <h3>Critic notes <span id="critic-summary" class="muted"></span></h3>
-            <ul id="critic-notes" class="findings"></ul>
-
-            <h3>Mission pacing</h3>
-            <div id="pacing"></div>
-
-            <h3>Playthrough simulation</h3>
-            <ul id="playtest" class="findings"></ul>
-
-            <h3>Missions</h3>
-            <div id="missions"></div>
-
-            <h3>Refine</h3>
-            <div class="refine-row">
-                <input id="refine-input" placeholder='e.g. "make mission 2 rainy night"'>
-                <button id="refine" class="secondary">Apply refinement</button>
+        <!-- Editor panes -->
+        <div class="pane pane--overview active" data-tab="overview">
+            <div class="grid grid--2">
+                <div class="panel">
+                    <h3>Quality score</h3>
+                    <div id="score-radar" class="score-radar"></div>
+                </div>
+                <div class="panel">
+                    <h3>Run summary</h3>
+                    <dl class="kv">
+                        <dt>Output path</dt><dd id="kv-output">—</dd>
+                        <dt>Artefacts</dt><dd id="kv-artefacts">—</dd>
+                        <dt>QA iterations</dt><dd id="kv-iterations">—</dd>
+                        <dt>Errors / warnings</dt><dd id="kv-qa">—</dd>
+                        <dt>LLM cost</dt><dd id="kv-cost">—</dd>
+                        <dt>Latency</dt><dd id="kv-latency">—</dd>
+                    </dl>
+                </div>
             </div>
 
-            <h3>Launch</h3>
-            <div id="launch"></div>
+            <div class="panel">
+                <h3>Pacing</h3>
+                <div id="pacing-strip"></div>
+            </div>
+
+            <div class="grid grid--2">
+                <div class="panel">
+                    <h3>QA findings <span id="qa-count" class="muted small"></span></h3>
+                    <ul id="qa-list" class="findings"></ul>
+                </div>
+                <div class="panel">
+                    <h3>Critic notes <span id="critic-count" class="muted small"></span></h3>
+                    <ul id="critic-list" class="findings"></ul>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Playthrough simulation</h3>
+                <ul id="playtest-list" class="findings"></ul>
+            </div>
         </div>
 
-        <div id="diff-panel" class="hidden">
-            <h3>Changes since last run</h3>
-            <div id="diff-list"></div>
+        <div class="pane pane--missions hidden" data-tab="missions">
+            <div class="layout-2col">
+                <aside class="mission-list">
+                    <div class="mission-list__header">
+                        <h3>Missions</h3>
+                        <span class="muted small" id="mission-count"></span>
+                    </div>
+                    <ul id="mission-items"></ul>
+                </aside>
+                <section class="mission-detail">
+                    <header class="mission-detail__header">
+                        <h3 id="mission-title">—</h3>
+                        <div class="mission-detail__meta" id="mission-meta"></div>
+                    </header>
+
+                    <nav class="subnav subnav--inner" role="tablist">
+                        <button class="subnav__tab active" data-mtab="fsm" role="tab">FSM</button>
+                        <button class="subnav__tab" data-mtab="map" role="tab">Map</button>
+                        <button class="subnav__tab" data-mtab="units" role="tab">Units</button>
+                        <button class="subnav__tab" data-mtab="dialog" role="tab">Dialogue</button>
+                        <button class="subnav__tab" data-mtab="extras" role="tab">Extras</button>
+                    </nav>
+
+                    <div class="mpane mpane--fsm active" data-mtab="fsm">
+                        <div class="canvas-wrap">
+                            <canvas id="fsm" width="600" height="380"></canvas>
+                            <div class="canvas-help muted small">Click a state to edit · drag to move</div>
+                        </div>
+                        <div class="mpane__actions">
+                            <button class="btn btn--ghost" id="fsm-reset-layout">Reset layout</button>
+                            <button class="btn btn--primary" id="fsm-push">Save FSM edits</button>
+                        </div>
+                        <div id="fsm-edit" class="inspector hidden">
+                            <h4>State <code id="fsm-edit-id">—</code></h4>
+                            <label>Label
+                                <input id="fsm-label" type="text">
+                            </label>
+                            <label>On-enter SQF (one statement per line)
+                                <textarea id="fsm-on-enter" rows="3"></textarea>
+                            </label>
+                            <label>Transitions <span class="muted small">JSON array</span>
+                                <textarea id="fsm-transitions" rows="4"
+                                          placeholder='[{"to":"end1","condition":"true"}]'></textarea>
+                            </label>
+                            <button class="btn btn--secondary" id="fsm-save-state">Apply changes</button>
+                        </div>
+                    </div>
+
+                    <div class="mpane mpane--map hidden" data-mtab="map">
+                        <div class="canvas-wrap">
+                            <canvas id="map" width="600" height="380"></canvas>
+                            <div class="canvas-help muted small" id="map-hover">Hover to inspect a feature</div>
+                        </div>
+                    </div>
+
+                    <div class="mpane mpane--units hidden" data-mtab="units">
+                        <table class="data-table" id="units-table">
+                            <thead><tr><th>Name</th><th>Class</th><th>Side</th><th>Group</th><th>x, y, z</th><th>Player?</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+
+                    <div class="mpane mpane--dialog hidden" data-mtab="dialog">
+                        <table class="data-table" id="dialog-table">
+                            <thead><tr><th>ID</th><th>Speaker</th><th>Trigger state</th><th>Text</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+
+                    <div class="mpane mpane--extras hidden" data-mtab="extras">
+                        <div class="grid grid--2">
+                            <div class="panel"><h4>Compositions</h4><div id="comp-list"></div></div>
+                            <div class="panel"><h4>Reinforcements</h4><div id="reinf-list"></div></div>
+                            <div class="panel"><h4>Cutscenes</h4><div id="cutscene-list"></div></div>
+                            <div class="panel"><h4>Music cues</h4><div id="music-list"></div></div>
+                            <div class="panel"><h4>Support assets</h4><div id="support-list"></div></div>
+                            <div class="panel"><h4>World flag writes</h4><div id="wf-list"></div></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div class="pane pane--code hidden" data-tab="code">
+            <div class="layout-2col">
+                <aside class="file-tree">
+                    <div class="file-tree__header">
+                        <h3>Files</h3>
+                        <span class="muted small" id="file-count"></span>
+                    </div>
+                    <div id="file-list"></div>
+                </aside>
+                <section class="code-view">
+                    <header class="code-view__header">
+                        <code id="code-path">Pick a file</code>
+                        <div class="code-view__actions">
+                            <button class="btn btn--ghost" id="code-copy">Copy</button>
+                        </div>
+                    </header>
+                    <pre><code id="code-body"></code></pre>
+                </section>
+            </div>
+        </div>
+
+        <div class="pane pane--deploy hidden" data-tab="deploy">
+            <div class="grid grid--2">
+                <div class="panel">
+                    <h3>Launch</h3>
+                    <p class="muted small">Click any command below to copy.</p>
+                    <div class="muted small">Eden Editor</div>
+                    <code class="copy" id="launch-editor">—</code>
+                    <div class="muted small">Steam URI</div>
+                    <code class="copy" id="launch-steam">—</code>
+                    <div class="muted small" id="launch-hint"></div>
+                </div>
+                <div class="panel">
+                    <h3>Eden round-trip</h3>
+                    <p class="muted small">Edit the mission in Eden Editor, paste the resulting <code>mission.sqm</code> here. Unit positions and waypoints merge back; FSM, dialogue and support are preserved.</p>
+                    <textarea id="eden-sqm" rows="8" placeholder="version=53; class Mission { ... }"></textarea>
+                    <button class="btn btn--secondary" id="eden-sync">Sync from Eden</button>
+                </div>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- VIEW: Templates gallery -->
+    <section class="view view--templates hidden" data-view="templates">
+        <header class="view__header">
+            <div>
+                <h2>Mission templates</h2>
+                <p class="muted small">Pick an archetype, tweak parameters, generate.</p>
+            </div>
+        </header>
+        <div class="template-grid" id="template-grid"></div>
+        <div class="modal hidden" id="template-modal" role="dialog" aria-modal="true">
+            <div class="modal__panel">
+                <header class="modal__header">
+                    <h3 id="tpl-title">Template</h3>
+                    <button class="btn btn--ghost modal__close" data-modal-close aria-label="Close">×</button>
+                </header>
+                <p class="muted small" id="tpl-summary"></p>
+                <form id="tpl-form" class="form-grid"></form>
+                <footer class="modal__footer">
+                    <button class="btn btn--ghost" data-modal-close>Cancel</button>
+                    <button class="btn btn--primary" id="tpl-generate">Generate</button>
+                </footer>
+            </div>
         </div>
     </section>
 
-    <section class="panel right">
-        <h2>3. FSM editor</h2>
-        <canvas id="fsm" width="480" height="360"></canvas>
-        <p class="muted small" id="fsm-mission-label"></p>
-        <div id="fsm-edit" class="hidden">
-            <label>State label <input id="fsm-label" type="text"></label>
-            <label>On-enter SQF (one stmt per line)
-                <textarea id="fsm-on-enter" rows="3"></textarea>
-            </label>
-            <label>Transitions (from-state)
-                <textarea id="fsm-transitions" rows="3" placeholder='[{"to":"end1","condition":"true"}]'></textarea>
-            </label>
-            <button id="fsm-save-state" class="secondary">Apply changes</button>
-        </div>
-        <button id="fsm-push" class="primary" style="margin-top: 8px">Regenerate with edits</button>
-
-        <h2 style="margin-top: 14px">4. Map preview</h2>
-        <canvas id="map" width="480" height="360"></canvas>
-        <p class="muted small" id="map-hover"></p>
-
-        <h2 style="margin-top: 14px">5. Eden sync</h2>
-        <label class="muted small">Paste a mission.sqm edited in Eden Editor.
-            Unit positions and waypoints merge back onto the selected mission;
-            everything else (FSM, dialog, support) is preserved.</label>
-        <textarea id="eden-sqm" rows="4" placeholder="version=53;..."></textarea>
-        <button id="eden-sync" class="secondary">Sync from Eden</button>
+    <!-- VIEW: Files (full mirror of Code tab; nav shortcut) -->
+    <section class="view view--files hidden" data-view="files">
+        <header class="view__header"><h2>Generated files</h2></header>
+        <div id="files-mirror" class="muted">Switch to <a href="#" data-go="editor:code">Editor → Code</a> to browse files.</div>
     </section>
+
+    <!-- VIEW: Deploy (alias to editor deploy tab) -->
+    <section class="view view--deploy hidden" data-view="deploy">
+        <header class="view__header"><h2>Deploy</h2></header>
+        <p class="muted">Use <a href="#" data-go="editor:deploy">Editor → Deploy</a> for launch commands and Eden sync.</p>
+    </section>
+
 </main>
 
-<footer>
-    <span>powered by the arma3-builder pipeline</span>
-    <span id="version">v0.2</span>
-</footer>
+<!-- Refine drawer ----------------------------------------------------- -->
+<aside class="drawer hidden" id="refine-drawer" aria-hidden="true">
+    <div class="drawer__panel">
+        <header class="drawer__header">
+            <h3>Refine campaign</h3>
+            <button class="btn btn--ghost" id="refine-close" aria-label="Close">×</button>
+        </header>
+        <p class="muted small">Tell the agents what to change. They'll patch the plan and regenerate, returning a unified diff.</p>
+        <textarea id="refine-input" rows="3"
+                  placeholder='e.g. "make mission 2 a rainy night"'></textarea>
+        <button class="btn btn--primary" id="refine-apply">Apply refinement</button>
+        <h4>Diff vs previous run</h4>
+        <div id="diff-list"></div>
+    </div>
+</aside>
+
+<!-- Command palette --------------------------------------------------- -->
+<div class="palette hidden" id="palette" role="dialog" aria-modal="true">
+    <div class="palette__panel">
+        <input id="palette-input" placeholder="Type a command, view, or template…" autocomplete="off">
+        <ul id="palette-results"></ul>
+    </div>
+</div>
+
+<!-- Toasts ------------------------------------------------------------ -->
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- Help ------------------------------------------------------------ -->
+<div class="modal hidden" id="help-modal" role="dialog" aria-modal="true">
+    <div class="modal__panel">
+        <header class="modal__header">
+            <h3>Keyboard shortcuts</h3>
+            <button class="btn btn--ghost modal__close" data-modal-close aria-label="Close">×</button>
+        </header>
+        <dl class="kv kv--shortcuts">
+            <dt><kbd>⌘</kbd>+<kbd>K</kbd></dt><dd>Open command palette</dd>
+            <dt><kbd>⌘</kbd>+<kbd>Enter</kbd></dt><dd>Generate from current input</dd>
+            <dt><kbd>⌘</kbd>+<kbd>S</kbd></dt><dd>Save FSM edits / push to backend</dd>
+            <dt><kbd>1</kbd> – <kbd>4</kbd></dt><dd>Switch editor tabs</dd>
+            <dt><kbd>g</kbd> then <kbd>n</kbd>/<kbd>e</kbd>/<kbd>t</kbd>/<kbd>d</kbd></dt><dd>Go to view (New / Editor / Templates / Deploy)</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Close palette / drawer / modal</dd>
+            <dt><kbd>?</kbd></dt><dd>This help</dd>
+        </dl>
+    </div>
+</div>
 
 <script src="/ui/app.js"></script>
 </body>

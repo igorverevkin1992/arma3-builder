@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 
 from ..arma.fsm import diagram_for_blueprint
 from ..arma.launcher import build_launch_payload
@@ -354,6 +354,77 @@ async def critique(req: RefineRequest) -> dict[str, Any]:
     ctx = _pipeline.make_context()
     notes = await _pipeline.critic.run(req.plan, ctx)
     return {"notes": [n.model_dump() for n in notes]}
+
+
+# --------------------------------------------------------------------------- #
+# File browser — let the UI introspect generated artefacts on disk.
+# --------------------------------------------------------------------------- #
+
+
+def _safe_output_path(rel: str) -> Path:
+    """Resolve `rel` under the configured output dir, blocking traversal.
+
+    The output directory is itself canonicalised; any path that escapes is
+    rejected with HTTP 403. Returns the resolved Path on success.
+    """
+    from ..config import get_settings
+
+    base = Path(get_settings().output_dir).resolve()
+    candidate = (base / rel).resolve() if rel else base
+    try:
+        candidate.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="path traversal blocked") from exc
+    return candidate
+
+
+@router.get("/files/list")
+async def files_list(rel: str = Query(default="")) -> dict[str, Any]:
+    """List directory contents under the output tree.
+
+    Returns directories first, then files, each with `name`, `path` (relative
+    to output_dir), `kind` ("dir"|"file"), and `size` for files.
+    """
+    target = _safe_output_path(rel)
+    if not target.exists():
+        return {"path": rel, "entries": []}
+    if target.is_file():
+        raise HTTPException(status_code=400, detail="not a directory")
+    from ..config import get_settings
+    base = Path(get_settings().output_dir).resolve()
+    out: list[dict[str, Any]] = []
+    for child in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+        out.append({
+            "name": child.name,
+            "path": str(child.relative_to(base)),
+            "kind": "dir" if child.is_dir() else "file",
+            "size": child.stat().st_size if child.is_file() else None,
+        })
+    return {"path": rel, "entries": out}
+
+
+@router.get("/files/read", response_class=PlainTextResponse)
+async def files_read(rel: str = Query(...)) -> str:
+    """Return the contents of a file under the output tree.
+
+    Caps at 256 KB so the UI doesn't blow up on giant binaries; larger
+    files return a placeholder describing the size and pointing the user
+    at the absolute path.
+    """
+    target = _safe_output_path(rel)
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    cap = 256 * 1024
+    size = target.stat().st_size
+    if size > cap:
+        return (
+            f"// File too large to render in the UI ({size} bytes).\n"
+            f"// Open it locally at: {target}\n"
+        )
+    try:
+        return target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return f"// Binary file ({size} bytes) — open with an external tool.\n"
 
 
 # --------------------------------------------------------------------------- #
