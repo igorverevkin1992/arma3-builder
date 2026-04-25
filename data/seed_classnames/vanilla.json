@@ -1,0 +1,18 @@
+{
+  "tenant": "a3",
+  "classnames": [
+    {"classname": "B_Soldier_F", "addon": "A3_Characters_F", "type": "Man", "faction": "BLU_F", "side": "WEST"},
+    {"classname": "B_Soldier_lite_F", "addon": "A3_Characters_F", "type": "Man", "faction": "BLU_F", "side": "WEST"},
+    {"classname": "B_Soldier_TL_F", "addon": "A3_Characters_F", "type": "Man", "faction": "BLU_F", "side": "WEST"},
+    {"classname": "B_recon_TL_F", "addon": "A3_Characters_F", "type": "Man", "faction": "BLU_F", "side": "WEST"},
+    {"classname": "O_Soldier_F", "addon": "A3_Characters_F", "type": "Man", "faction": "OPF_F", "side": "EAST"},
+    {"classname": "O_Soldier_TL_F", "addon": "A3_Characters_F", "type": "Man", "faction": "OPF_F", "side": "EAST"},
+    {"classname": "O_Soldier_AR_F", "addon": "A3_Characters_F", "type": "Man", "faction": "OPF_F", "side": "EAST"},
+    {"classname": "I_Soldier_F", "addon": "A3_Characters_F", "type": "Man", "faction": "IND_F", "side": "INDEPENDENT"},
+    {"classname": "C_man_polo_1_F", "addon": "A3_Characters_F_Beta", "type": "Man", "faction": "CIV_F", "side": "CIVILIAN"},
+    {"classname": "B_MRAP_01_F", "addon": "A3_Soft_F_MRAP_01", "type": "Vehicle", "faction": "BLU_F", "side": "WEST"},
+    {"classname": "B_Heli_Light_01_F", "addon": "A3_Air_F", "type": "Vehicle", "faction": "BLU_F", "side": "WEST"},
+    {"classname": "O_Truck_03_transport_F", "addon": "A3_Soft_F_Exp_Truck_03", "type": "Vehicle", "faction": "OPF_F", "side": "EAST"},
+    {"classname": "B_HMG_01_F", "addon": "A3_Static_F", "type": "StaticWeapon", "faction": "BLU_F", "side": "WEST"}
+  ]
+}

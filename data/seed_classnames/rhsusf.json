@@ -1,0 +1,13 @@
+{
+  "tenant": "rhsusf_main",
+  "classnames": [
+    {"classname": "rhsusf_socom_marsoc_teamleader", "addon": "rhsusf_c_troops", "type": "Man", "faction": "rhs_faction_socom", "side": "WEST"},
+    {"classname": "rhsusf_socom_marsoc_marksman", "addon": "rhsusf_c_troops", "type": "Man", "faction": "rhs_faction_socom", "side": "WEST"},
+    {"classname": "rhsusf_socom_marsoc_sarc", "addon": "rhsusf_c_troops", "type": "Man", "faction": "rhs_faction_socom", "side": "WEST"},
+    {"classname": "rhsusf_socom_marsoc_breacher", "addon": "rhsusf_c_troops", "type": "Man", "faction": "rhs_faction_socom", "side": "WEST"},
+    {"classname": "rhsusf_m1240a1_m2_usarmy_wd", "addon": "rhsusf_c_m1240a1", "type": "Vehicle", "faction": "rhs_faction_usarmy_wd", "side": "WEST"},
+    {"classname": "RHS_UH60M", "addon": "rhsusf_c_uh60", "type": "Vehicle", "faction": "rhs_faction_usarmy_wd", "side": "WEST"},
+    {"classname": "rhs_msv_emr_rifleman", "addon": "rhs_c_troops", "type": "Man", "faction": "rhs_faction_msv", "side": "EAST"},
+    {"classname": "rhs_t72bd_tv", "addon": "rhs_c_t72", "type": "Vehicle", "faction": "rhs_faction_msv", "side": "EAST"}
+  ]
+}

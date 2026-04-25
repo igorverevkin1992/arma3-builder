@@ -1,0 +1,28 @@
+{
+  "world": "Tanoa",
+  "world_class": "Tanoa",
+  "size": [12288, 12288],
+  "points_of_interest": [
+    {"id": "georgetown",    "kind": "urban",    "position": [8700, 4020, 0], "radius": 400},
+    {"id": "la_rochelle",   "kind": "urban",    "position": [11205, 10415, 0], "radius": 320},
+    {"id": "lijnhaven",     "kind": "urban",    "position": [4155, 5750, 0], "radius": 300},
+    {"id": "tuvanaka_air",  "kind": "airfield", "position": [1220, 8200, 0], "radius": 500},
+    {"id": "ngengi_airport","kind": "airfield", "position": [11320, 4580, 0], "radius": 500},
+    {"id": "mount_tokewero","kind": "hill",     "position": [7600, 8300, 220], "radius": 600},
+    {"id": "blue_pearl",    "kind": "industrial","position": [3300, 4960, 0], "radius": 260},
+    {"id": "comms_tower",   "kind": "outpost",  "position": [5800, 7650, 180], "radius": 120},
+    {"id": "beach_hotel",   "kind": "urban",    "position": [8080, 1840, 0], "radius": 180}
+  ],
+  "roads": [
+    [[8700, 4020], [7600, 5100], [5800, 5900], [4155, 5750]],
+    [[4155, 5750], [3300, 4960], [1220, 8200]],
+    [[8700, 4020], [11320, 4580]],
+    [[5800, 5900], [5800, 7650], [7600, 8300], [11205, 10415]]
+  ],
+  "lz_candidates": [
+    {"id": "lz_alpha",  "position": [7820, 4260, 0]},
+    {"id": "lz_bravo",  "position": [5520, 6140, 0]},
+    {"id": "lz_charlie","position": [3400, 5320, 0]},
+    {"id": "lz_delta",  "position": [6900, 8060, 0]}
+  ]
+}

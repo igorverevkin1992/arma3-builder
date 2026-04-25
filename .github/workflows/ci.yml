@@ -1,0 +1,45 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run pytest
+        run: pytest -q
+
+      # sqflint adds a real static-analysis pass. It's a Haskell binary so we
+      # grab a prebuilt release when available; otherwise the QA agent's
+      # internal antipattern scan covers the common cases.
+      - name: Setup sqflint (optional)
+        id: sqflint
+        run: |
+          set -e
+          if curl -fsSL -o /tmp/sqflint https://github.com/SkaceKamen/sqflint/releases/latest/download/sqflint-linux; then
+              chmod +x /tmp/sqflint
+              sudo mv /tmp/sqflint /usr/local/bin/sqflint
+              echo "ok=true" >> $GITHUB_OUTPUT
+          else
+              echo "ok=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Lint generated SQF (optional)
+        if: steps.sqflint.outputs.ok == 'true'
+        run: |
+          python scripts/demo.py >/dev/null
+          find output -name '*.sqf' -print0 | xargs -0 -n1 sqflint -r || true
