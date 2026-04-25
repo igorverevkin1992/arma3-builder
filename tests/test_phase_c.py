@@ -397,7 +397,7 @@ def test_c5_piper_unavailable_falls_back_to_null(tmp_path):
 def test_c6_ui_has_critic_and_fsm_editor_dom():
     c = TestClient(app)
     html = c.get("/").text
-    assert 'id="critic-list"' in html
+    assert 'id="critic-notes"' in html
     assert 'id="fsm-edit"' in html
     assert 'id="eden-sqm"' in html
 

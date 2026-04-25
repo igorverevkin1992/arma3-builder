@@ -333,8 +333,8 @@ def test_a6_ui_serves_wizard_markup():
     c = TestClient(app)
     r = c.get("/")
     assert r.status_code == 200
-    assert "campaign studio" in r.text or "Template gallery" in r.text
-    assert 'id="prompt"' in r.text
+    assert "Wizard" in r.text
+    assert "wizard-steps" in r.text
 
 
 def test_a6_generate_response_includes_phase_a_fields():
