@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..protocols import MissionBlueprint, WorldFlagWrite
+from ..protocols import MissionBlueprint
 
 
 def generate_world_flags_helper_sqf() -> str:

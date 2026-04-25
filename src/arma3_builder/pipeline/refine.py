@@ -14,7 +14,6 @@ from ..llm import LLMClient
 from ..llm.prompts import NARRATIVE_SYSTEM
 from ..protocols import CampaignPlan
 
-
 REFINE_SYSTEM = (
     NARRATIVE_SYSTEM
     + "\n\nYou are in refinement mode. You receive a JSON CampaignPlan and a "
@@ -62,10 +61,7 @@ def _apply_patches(plan: CampaignPlan, patches: list[dict[str, Any]]) -> Campaig
 
 def _apply_one(obj: Any, op: str, segments: list[str], value: Any) -> None:
     for seg in segments[:-1]:
-        if isinstance(obj, list):
-            obj = obj[int(seg)]
-        else:
-            obj = obj[seg]
+        obj = obj[int(seg)] if isinstance(obj, list) else obj[seg]
     last = segments[-1]
     if op == "replace" or op == "add":
         if isinstance(obj, list):

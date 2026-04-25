@@ -6,8 +6,8 @@ count) instead of writing a brief.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from ..arma.campaign import slugify
 from ..arma.maps import MapSampler

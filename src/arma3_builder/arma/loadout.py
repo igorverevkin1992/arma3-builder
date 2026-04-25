@@ -13,8 +13,7 @@ extend it at runtime via ``register_loadout``.
 """
 from __future__ import annotations
 
-from ..protocols import Loadout, MissionBlueprint
-
+from ..protocols import Loadout
 
 # --------------------------------------------------------------------------- #
 # Default catalogue (role_id -> Loadout). Vanilla BLUFOR baseline.
@@ -240,7 +239,7 @@ def generate_loadout_sqf(loadouts: list[Loadout]) -> str:
         "",
         "switch (toLower _role) do {",
     ]
-    blocks = [_emit_one_loadout(l) for l in loadouts]
+    blocks = [_emit_one_loadout(lo) for lo in loadouts]
     footer = [
         "    default {",
         "        diag_log format [\"[A3B] applyLoadout: unknown role %1\", _role];",
@@ -275,7 +274,7 @@ def lobby_param_block(loadouts: list[Loadout]) -> str:
     if not loadouts:
         return ""
     values = ", ".join(str(i) for i in range(len(loadouts)))
-    texts = ", ".join(f'"{l.display_name}"' for l in loadouts)
+    texts = ", ".join(f'"{lo.display_name}"' for lo in loadouts)
     return (
         "class Params\n"
         "{\n"
@@ -293,14 +292,14 @@ def lobby_param_block(loadouts: list[Loadout]) -> str:
 def loadout_addons(loadouts: list[Loadout]) -> set[str]:
     """Collect addon-ish hints from classname prefixes for AddonsMetaData."""
     addons: set[str] = set()
-    for l in loadouts:
+    for lo in loadouts:
         for name in (
-            [l.uniform, l.vest, l.headgear, l.goggles, l.backpack,
-             l.primary_weapon, l.secondary_weapon, l.handgun]
-            + l.items + l.linked_items
-            + [c for c, _ in l.primary_magazines]
-            + [c for c, _ in l.secondary_magazines]
-            + [c for c, _ in l.handgun_magazines]
+            [lo.uniform, lo.vest, lo.headgear, lo.goggles, lo.backpack,
+             lo.primary_weapon, lo.secondary_weapon, lo.handgun]
+            + lo.items + lo.linked_items
+            + [c for c, _ in lo.primary_magazines]
+            + [c for c, _ in lo.secondary_magazines]
+            + [c for c, _ in lo.handgun_magazines]
         ):
             if not name:
                 continue

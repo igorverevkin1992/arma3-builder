@@ -10,7 +10,6 @@ unreachable paths from a pacing perspective). The output feeds:
 """
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from ..protocols import (

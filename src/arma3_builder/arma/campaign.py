@@ -50,7 +50,7 @@ def generate_campaign_description(plan: CampaignPlan) -> str:
 
     return (
         '// Auto-generated Campaign Description.ext\n'
-        f'class Campaign\n{{\n'
+        'class Campaign\n{\n'
         + "\n".join(chapters)
         + '\n};\n'
     )

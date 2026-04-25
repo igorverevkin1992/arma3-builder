@@ -41,7 +41,6 @@ def wire_music_into_fsm(blueprint: MissionBlueprint) -> None:
         state = by_id.get(cue.trigger_state)
         if state is None:
             continue
-        fade_ms = int(cue.fade_seconds * 1000)
         # Cross-fade via fadeMusic. playMusic starts the track from 0s
         # on every client (it broadcasts automatically).
         state.on_enter.append(

@@ -9,11 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from xml.sax.saxutils import escape as _xml_escape
 
+from ..protocols import CampaignPlan
+
 
 def escape(s: str) -> str:
     return _xml_escape(s, {'"': "&quot;", "'": "&apos;"})
-
-from ..protocols import CampaignPlan
 
 
 @dataclass

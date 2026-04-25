@@ -12,7 +12,7 @@ This is the core of the QA Validator agent. It combines:
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 from ..protocols import (
     CampaignPlan,

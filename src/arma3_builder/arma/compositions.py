@@ -12,8 +12,8 @@ a squad of 8 vs a squad of 12 shares the same schema.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from ..protocols import Composition, UnitPlacement, Waypoint
 

@@ -9,7 +9,6 @@ from pathlib import Path
 from .chunking import semantic_chunks, table_to_markdown
 from .store import Document, VectorStore
 
-
 _HTML_TABLE_RE = re.compile(r"<table[\s\S]*?</table>", re.IGNORECASE)
 
 

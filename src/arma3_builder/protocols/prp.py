@@ -12,7 +12,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
 # --------------------------------------------------------------------------- #
 # Brief (user input)
 # --------------------------------------------------------------------------- #
@@ -48,10 +47,10 @@ class CampaignBrief(BaseModel):
     )
     missions: list[MissionBrief] = Field(default_factory=list)
     # Phase B: recurring NPCs shared across missions.
-    characters: list["Character"] = Field(default_factory=list)
+    characters: list[Character] = Field(default_factory=list)
     # Phase C: ACE configuration — when present, ConfigMaster emits the
     # ace_settings block into every mission's description.ext.
-    ace_settings: "AceSettings | None" = None
+    ace_settings: AceSettings | None = None
 
     @field_validator("name")
     @classmethod
@@ -542,9 +541,7 @@ class QAReport(BaseModel):
     def is_clean(self, *, strict: bool) -> bool:
         if self.errors:
             return False
-        if strict and self.warnings:
-            return False
-        return True
+        return not (strict and self.warnings)
 
 
 # --------------------------------------------------------------------------- #

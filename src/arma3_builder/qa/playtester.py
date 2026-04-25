@@ -20,13 +20,11 @@ from dataclasses import dataclass, field
 from ..protocols import (
     CampaignPlan,
     FsmGraph,
-    FsmState,
     MissionBlueprint,
     QAFinding,
     Severity,
     TransitionKind,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Reachability / liveness

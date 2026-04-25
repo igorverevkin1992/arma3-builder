@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from ..protocols import MissionBlueprint, SupportAsset
 
-
 _CAS_TEMPLATE = '''\
     case "cas": {
         private _plane = createVehicle [_vehicle, _pos getPos [800, _heading - 180], [], 0, "FLY"];

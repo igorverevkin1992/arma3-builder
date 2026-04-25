@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator
 
 
 @dataclass

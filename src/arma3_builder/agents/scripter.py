@@ -14,7 +14,6 @@ from ..arma import (
     generate_statemachine_sqf,
 )
 from ..arma.arsenal import (
-    arsenal_addons,
     generate_arsenal_client_sqf,
     generate_arsenal_server_sqf,
 )
@@ -48,7 +47,6 @@ from ..arma.worldflags import (
     generate_world_flags_reader_sqf,
     wire_world_flag_writes,
 )
-from ..tts import synthesise_dialogue
 from ..config import get_settings
 from ..protocols import (
     GeneratedArtifact,
@@ -56,6 +54,7 @@ from ..protocols import (
     QAFinding,
     QAReport,
 )
+from ..tts import synthesise_dialogue
 from .base import Agent, AgentContext
 
 
@@ -242,17 +241,16 @@ class ScripterAgent(Agent):
                     audio_map[entry.line_id] = entry.sound_path
                     # Pull the generated audio into the output artefacts too.
                     abs_path = tmp_mission / entry.sound_path
-                    if abs_path.exists():
-                        # Binary placeholder; we stash the path in `content`
-                        # as a base64 string only when we actually need to
-                        # ship audio. Null provider writes empty bytes, so
-                        # we skip adding the artefact to keep the tree clean.
-                        if abs_path.stat().st_size > 0:
-                            artifacts.append(GeneratedArtifact(
-                                relative_path=f"{prefix}/{entry.sound_path}",
-                                content="",                  # binary placeholder
-                                kind="txt",
-                            ))
+                    # Binary placeholder; we stash the path in `content`
+                    # as a base64 string only when we actually need to
+                    # ship audio. Null provider writes empty bytes, so
+                    # we skip adding the artefact to keep the tree clean.
+                    if abs_path.exists() and abs_path.stat().st_size > 0:
+                        artifacts.append(GeneratedArtifact(
+                            relative_path=f"{prefix}/{entry.sound_path}",
+                            content="",                  # binary placeholder
+                            kind="txt",
+                        ))
             except Exception as exc:  # noqa: BLE001
                 self.log.warning("tts_synthesise_failed", error=str(exc))
 

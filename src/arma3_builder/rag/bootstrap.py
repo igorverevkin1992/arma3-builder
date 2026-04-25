@@ -7,11 +7,9 @@ from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
 
 from ..config import data_dir
 from .ingest_biki import ingest_directory
-from .ingest_classnames import classnode_to_document
 from .store import Document, VectorStore
 
 

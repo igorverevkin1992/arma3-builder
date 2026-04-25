@@ -23,7 +23,6 @@ from typing import Any
 
 from ..protocols import MissionBlueprint, UnitPlacement, Waypoint
 
-
 # --------------------------------------------------------------------------- #
 # Tokeniser / balanced-class walker
 # --------------------------------------------------------------------------- #
@@ -37,7 +36,7 @@ _KV_RE    = re.compile(r"([A-Za-z_][\w]*)\s*(?:\[\s*\])?\s*=\s*([^;]+);")
 class ParsedClass:
     name: str
     attrs: dict[str, Any] = field(default_factory=dict)
-    children: list["ParsedClass"] = field(default_factory=list)
+    children: list[ParsedClass] = field(default_factory=list)
 
 
 def parse_sqm(text: str) -> ParsedClass:
@@ -59,7 +58,8 @@ def _parse_body(text: str, start: int, end: int, parent: ParsedClass) -> None:
         # Skip whitespace / line-comments.
         ch = text[i]
         if ch.isspace():
-            i += 1; continue
+            i += 1
+            continue
         if text[i:i+2] == "//":
             nl = text.find("\n", i)
             i = nl + 1 if nl != -1 else end

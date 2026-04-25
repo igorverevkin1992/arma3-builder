@@ -12,8 +12,9 @@ import hashlib
 import math
 import re
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable, Protocol
+from typing import Protocol
 
 from ..config import get_settings
 
@@ -150,7 +151,7 @@ class MemoryStore:
         for doc_id, doc in enumerate(self.docs):
             if doc.embedding is None:
                 continue
-            dot = sum(q * d for q, d in zip(q_vec, doc.embedding))
+            dot = sum(q * d for q, d in zip(q_vec, doc.embedding, strict=False))
             scores[doc_id] = scores.get(doc_id, 0.0) + 0.5 * dot
 
         ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)

@@ -1,6 +1,7 @@
 """Wrapper around the external `sqflint` CLI with a graceful no-op fallback."""
 from __future__ import annotations
 
+import contextlib
 import shutil
 import subprocess
 import tempfile
@@ -29,10 +30,8 @@ class SqfLinter:
         try:
             return self._run([str(tmp_path)], display_name=filename)
         finally:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 tmp_path.unlink()
-            except FileNotFoundError:
-                pass
 
     def lint_file(self, path: Path) -> list[QAFinding]:
         if not self.available:
